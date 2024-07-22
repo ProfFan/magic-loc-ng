@@ -1175,6 +1175,7 @@ dependencies = [
  "esp-println",
  "esp-storage",
  "esp-wifi",
+ "esp32s3",
  "heapless",
  "icm426xx",
  "magic-loc-protocol",

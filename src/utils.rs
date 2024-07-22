@@ -6,7 +6,7 @@ use embassy_time::Instant;
 pub async fn time_operation<T>(f: impl Future<Output = T>) -> T {
     let start = Instant::now();
     let r = f.await;
-    defmt::info!(
+    defmt::trace!(
         "Operation took: {:?}us",
         (Instant::now() - start).as_micros()
     );

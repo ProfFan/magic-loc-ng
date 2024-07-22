@@ -48,19 +48,26 @@ pub async fn imu_task<CS: OutputPin>(
 
     let mut ticker = Ticker::every(Duration::from_hz(1000));
     loop {
-
         // No need to check FIFO count since we are reading 3 packets at a time
         // and the sample rate is 1kHz, we will only get 1 packet per read anyway
-        
+
         // let fifo_count = time_operation(icm.read_fifo_count()).await;
         // defmt::trace!("FIFO count: {}", fifo_count);
 
-        let mut fifo_buffer = [0u32; 64];
-        let num_read = time_operation(icm.read_fifo(&mut fifo_buffer))
+        // 16 * 4 = 64 bytes, 4 bytes header + 3 * 20 bytes data
+        let mut fifo_buffer = [0u32; 16];
+        let buffered_num = time_operation(icm.read_fifo(&mut fifo_buffer))
             .await
             .unwrap();
 
-        defmt::debug!("Read {} packets", num_read);
+        defmt::debug!("In-FIFO: {} packets", buffered_num);
+
+        let num_read = if buffered_num > 3 {
+            defmt::error!("FIFO is not being read fast enough");
+            3
+        } else {
+            buffered_num
+        };
 
         let packets = bytemuck::cast_slice::<u32, icm426xx::fifo::FifoPacket4>(
             &fifo_buffer[1..(1 + (num_read * 5))],

@@ -1,9 +1,12 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![feature(asm_experimental_arch)]
+#![feature(pointer_is_aligned_to)]
 
 mod inertial;
-mod serial_comm;
+mod network;
+mod serial;
 mod utils;
 
 use defmt as _;
@@ -38,18 +41,17 @@ pub async fn imu_task_spi2_dma(
 
 #[main]
 async fn main(spawner: Spawner) {
-    esp_println::println!("Init!");
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    let clocks = ClockControl::max(system.clock_control).freeze();
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks, None);
-    let timers = make_static!([OneShotTimer::new(timg0.timer0.into())]);
+    let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
+    let timers = make_static!([OneShotTimer::new(systimer.alarm0.into())]);
     esp_hal_embassy::init(&clocks, timers);
 
     // Start the serial comm as early as possible
     // Since the `esp-println` impl will block if buffer becomes full
-    spawner.spawn(serial_comm::serial_comm_task()).unwrap();
+    spawner.spawn(serial::serial_comm_task()).unwrap();
 
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     let sclk = io.pins.gpio33;
@@ -64,9 +66,11 @@ async fn main(spawner: Spawner) {
     Timer::after_millis(1).await;
     baro_cs.set_high();
 
+    Timer::after_secs(2).await;
+
     // --- WIFI ---
-    let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
-    let wifi_timer = PeriodicTimer::new(timg1.timer0.into());
+    let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0, &clocks, None);
+    let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
 
     let wifi = peripherals.WIFI;
     let init = esp_wifi::initialize(
@@ -78,13 +82,9 @@ async fn main(spawner: Spawner) {
     )
     .unwrap();
 
-    let (wifi_interface, mut controller) =
-        esp_wifi::wifi::new_with_mode(&init, wifi, WifiApDevice).unwrap();
-
-    controller.start().await.unwrap();
+    spawner.spawn(network::wifi_test_task(init, wifi)).unwrap();
 
     // --- IMU ---
-
     let dma = Dma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
@@ -96,4 +96,12 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(imu_task_spi2_dma(cs, dma_channel, spi))
         .unwrap();
+
+    // A never-ending heartbeat
+    loop {
+        Timer::after_secs(5).await;
+        defmt::info!("Still alive!");
+
+        panic!("This is a panic message");
+    }
 }

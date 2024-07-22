@@ -1,6 +1,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-//! Serial communication module
+pub mod handlers;
+
+// Serial communication module
 
 use core::ptr::addr_of_mut;
 use core::{future::poll_fn, sync::atomic::AtomicBool, task::Poll};
@@ -20,6 +22,7 @@ use esp_hal::macros::ram;
 static mut USB_SERIAL_READY: AtomicBool = AtomicBool::new(false);
 static mut USB_SERIAL_TX_BUFFER: bbqueue::BBBuffer<2048> = bbqueue::BBBuffer::new();
 static mut USB_SERIAL_TX_PRODUCER: Option<bbqueue::Producer<'static, 2048>> = None;
+static mut USB_SERIAL_TX_CONSUMER: Option<bbqueue::Consumer<'static, 2048>> = None;
 
 static mut WAKER: AtomicWaker = AtomicWaker::new();
 
@@ -41,7 +44,7 @@ unsafe impl defmt::Logger for GlobalLogger {
 
             // Compiler fence to prevent reordering of the above critical section with the
             // subsequent access to the `TAKEN` flag.
-            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 
             if TAKEN {
                 panic!("defmt logger already taken!");
@@ -126,7 +129,7 @@ unsafe impl defmt::Logger for GlobalLogger {
         unsafe {
             TAKEN = false;
 
-            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 
             critical_section::release(CS_RESTORE);
         }
@@ -165,7 +168,7 @@ fn do_write(bytes: &[u8]) {
 #[ram]
 pub fn write_to_usb_serial_buffer(bytes: &[u8]) -> Result<(), ()> {
     let restore = unsafe { critical_section::acquire() };
-    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 
     let grant = unsafe { USB_SERIAL_TX_PRODUCER.as_mut() }
         .unwrap()
@@ -177,24 +180,18 @@ pub fn write_to_usb_serial_buffer(bytes: &[u8]) -> Result<(), ()> {
 
         unsafe { WAKER.wake() };
 
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
         unsafe { critical_section::release(restore) };
 
         Ok(())
     } else {
         unsafe { WAKER.wake() };
 
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
         unsafe { critical_section::release(restore) };
 
         Err(())
     }
-}
-
-/// This allows `esp-backtrace` to work even when embassy is dead
-#[export_name = "custom_pre_backtrace"]
-fn custom_pre_backtrace() {
-    unsafe { USB_SERIAL_READY.store(false, core::sync::atomic::Ordering::Relaxed) };
 }
 
 /// The serial task
@@ -209,8 +206,11 @@ pub async fn serial_comm_task() {
     interrupt::enable(Interrupt::USB_DEVICE, interrupt::Priority::Priority1).unwrap();
 
     // Initialize the BBQueue
-    let (producer, mut consumer) = unsafe { USB_SERIAL_TX_BUFFER.try_split().unwrap() };
+    let (producer, consumer) = unsafe { USB_SERIAL_TX_BUFFER.try_split().unwrap() };
     unsafe { USB_SERIAL_TX_PRODUCER = Some(producer) };
+    unsafe { USB_SERIAL_TX_CONSUMER = Some(consumer) };
+
+    let consumer = unsafe { USB_SERIAL_TX_CONSUMER.as_mut().unwrap() };
 
     // TX async block
     let tx = async {
