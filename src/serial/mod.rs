@@ -32,6 +32,11 @@ static mut TAKEN: bool = false;
 static mut LOGGER_BUFFER: [u8; 2048] = [0; 2048];
 static mut BUFFER_CURSOR: usize = 0;
 
+// defmt::timestamp!("{=u64:us}", {
+//     // NOTE(interrupt-safe) single instruction volatile read operation
+//     embassy_time::Instant::now().as_micros()
+// });
+
 #[defmt::global_logger]
 pub struct GlobalLogger;
 
@@ -44,7 +49,7 @@ unsafe impl defmt::Logger for GlobalLogger {
 
             // Compiler fence to prevent reordering of the above critical section with the
             // subsequent access to the `TAKEN` flag.
-            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
             if TAKEN {
                 panic!("defmt logger already taken!");
@@ -129,7 +134,7 @@ unsafe impl defmt::Logger for GlobalLogger {
         unsafe {
             TAKEN = false;
 
-            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
             critical_section::release(CS_RESTORE);
         }
@@ -159,7 +164,7 @@ unsafe impl defmt::Logger for GlobalLogger {
 
 #[inline]
 fn do_write(bytes: &[u8]) {
-    Printer::write_bytes(bytes)
+    // Printer::write_bytes(bytes)
 }
 
 /// Write to the USB serial buffer
@@ -168,7 +173,7 @@ fn do_write(bytes: &[u8]) {
 #[ram]
 pub fn write_to_usb_serial_buffer(bytes: &[u8]) -> Result<(), ()> {
     let restore = unsafe { critical_section::acquire() };
-    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
     let grant = unsafe { USB_SERIAL_TX_PRODUCER.as_mut() }
         .unwrap()
@@ -180,14 +185,14 @@ pub fn write_to_usb_serial_buffer(bytes: &[u8]) -> Result<(), ()> {
 
         unsafe { WAKER.wake() };
 
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         unsafe { critical_section::release(restore) };
 
         Ok(())
     } else {
         unsafe { WAKER.wake() };
 
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
         unsafe { critical_section::release(restore) };
 
         Err(())
@@ -203,7 +208,7 @@ pub async fn serial_comm_task() {
     let peripherals = unsafe { Peripherals::steal() };
     let mut usb_serial = UsbSerialJtag::<Async>::new_async(peripherals.USB_DEVICE);
 
-    interrupt::enable(Interrupt::USB_DEVICE, interrupt::Priority::Priority1).unwrap();
+    // interrupt::enable(Interrupt::USB_DEVICE, interrupt::Priority::Priority1).unwrap();
 
     // Initialize the BBQueue
     let (producer, consumer) = unsafe { USB_SERIAL_TX_BUFFER.try_split().unwrap() };

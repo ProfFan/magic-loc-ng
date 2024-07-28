@@ -4,10 +4,14 @@
 #![feature(asm_experimental_arch)]
 #![feature(pointer_is_aligned_to)]
 
+mod indicator;
 mod inertial;
 mod network;
+mod ranging;
 mod serial;
 mod utils;
+
+use core::mem::MaybeUninit;
 
 use defmt as _;
 use embassy_executor::{task, Spawner};
@@ -15,8 +19,10 @@ use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
+    cpu_control::{CpuControl, Stack},
     dma::*,
-    gpio::{GpioPin, Io, Level, Output},
+    gpio::{AnyOutput, GpioPin, Io, Level, Output},
+    interrupt,
     peripherals::{Peripherals, SPI2},
     prelude::*,
     rng::Rng,
@@ -24,19 +30,24 @@ use esp_hal::{
     system::SystemControl,
     timer::{timg::TimerGroup, OneShotTimer, PeriodicTimer},
 };
+use esp_hal_embassy::InterruptExecutor;
 use esp_wifi::{self, wifi::WifiApDevice, EspWifiInitFor};
-use static_cell::make_static;
+use static_cell::{make_static, StaticCell};
 
-/// Wrap the `imu_task` function in a non-generic task
-///
-/// This is necessary because the `#[task]` macro does not support generics
-#[task]
-pub async fn imu_task_spi2_dma(
-    cs: GpioPin<34>,
-    dma_channel: esp_hal::dma::ChannelCreator<0>,
-    spi_bus: Spi<'static, SPI2, FullDuplexMode>,
-) {
-    inertial::imu_task::<_>(cs, dma_channel, spi_bus).await;
+// Stack for the second core
+static mut APP_CORE_STACK: Stack<65536> = Stack::new();
+
+// Global allocator
+#[global_allocator]
+static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+
+fn init_heap() {
+    const HEAP_SIZE: usize = 64 * 1024;
+    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
+
+    unsafe {
+        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
+    }
 }
 
 #[main]
@@ -45,9 +56,17 @@ async fn main(spawner: Spawner) {
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
 
-    let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-    let timers = make_static!([OneShotTimer::new(systimer.alarm0.into())]);
+    // let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
+    // let timers = make_static!([OneShotTimer::new(systimer.alarm0.into())]);
+
+    // let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
+    // let timers = make_static!([OneShotTimer::new(timg1.timer0.into())]);
+    let timers = esp_hal::timer::systimer::SystemTimer::new_async(peripherals.SYSTIMER);
     esp_hal_embassy::init(&clocks, timers);
+
+    init_heap();
+
+    // Spawners
 
     // Start the serial comm as early as possible
     // Since the `esp-println` impl will block if buffer becomes full
@@ -69,13 +88,13 @@ async fn main(spawner: Spawner) {
     Timer::after_secs(2).await;
 
     // --- WIFI ---
-    let timg0 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG0, &clocks, None);
-    let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
+    let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
+    // let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
 
     let wifi = peripherals.WIFI;
     let init = esp_wifi::initialize(
         EspWifiInitFor::Wifi,
-        wifi_timer,
+        timg1.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
         &clocks,
@@ -83,6 +102,20 @@ async fn main(spawner: Spawner) {
     .unwrap();
 
     spawner.spawn(network::wifi_test_task(init, wifi)).unwrap();
+
+    Timer::after_secs(1).await;
+
+    // --- BMS ---
+    let bms_sda = io.pins.gpio1;
+    let bms_scl = io.pins.gpio2;
+
+    let mut bms_i2c =
+        esp_hal::i2c::I2C::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz(), &clocks);
+    let mut reg07 = [0u8; 1];
+
+    // Register 0x07, 1 byte
+    bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
+    bms_i2c.write(0x6B, &[0x07, reg07[0] | 0b00100000u8]).await.ok();
 
     // --- IMU ---
     let dma = Dma::new(peripherals.DMA);
@@ -94,14 +127,35 @@ async fn main(spawner: Spawner) {
         .with_mosi(mosi);
 
     spawner
-        .spawn(imu_task_spi2_dma(cs, dma_channel, spi))
-        .unwrap();
+    .spawn(inertial::imu_task(AnyOutput::new(cs, Level::High), dma_channel, spi))
+    .unwrap();
+    // let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+    // let cpu1_fnctn = move || {
+    //     let executor_core1 =
+    //         InterruptExecutor::new(system.software_interrupt_control.software_interrupt2);
+    //     let executor_core1 = INT_EXECUTOR_CORE_1.init(executor_core1);
+    //     let spawner = executor_core1.start(interrupt::Priority::Priority1);
+
+    //     loop {}
+    // };
+
+    // defmt::info!("Starting core 1");
+
+    // let _guard = cpu_control
+    //     .start_app_core(
+    //         unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
+    //         cpu1_fnctn,
+    //     )
+    //     .unwrap();
+
+    let led = io.pins.gpio5;
+    spawner
+        .spawn(indicator::control_led(AnyOutput::new(led, Level::Low)))
+        .ok();
 
     // A never-ending heartbeat
     loop {
         Timer::after_secs(5).await;
         defmt::info!("Still alive!");
-
-        panic!("This is a panic message");
     }
 }

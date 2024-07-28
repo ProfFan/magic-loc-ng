@@ -1,6 +1,6 @@
 use embassy_time::{Delay, Duration, Ticker, Timer};
 use esp_hal::dma::DmaPriority;
-use esp_hal::gpio::{Level, Output, OutputPin};
+use esp_hal::gpio::{AnyOutput, Level, Output, OutputPin};
 use esp_hal::peripheral::Peripheral;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::{dma::WithDmaSpi2, Spi};
@@ -9,20 +9,22 @@ use esp_hal::{dma, dma_descriptors};
 
 use crate::utils::time_operation;
 
-pub async fn imu_task<CS: OutputPin>(
-    cs: impl Peripheral<P = CS>,
+#[embassy_executor::task]
+pub async fn imu_task(
+    mut cs_output: AnyOutput<'static>,
     dma_channel: dma::ChannelCreator<0>,
     spi: Spi<'static, SPI2, FullDuplexMode>,
 ) {
-    let (descriptors, rx_descriptors) = dma_descriptors!(3200);
+    defmt::info!("Starting IMU task");
 
-    let spi = spi.with_dma(
-        dma_channel.configure_for_async(false, DmaPriority::Priority0),
-        descriptors,
-        rx_descriptors,
-    );
+    let (descriptors, rx_descriptors) = dma_descriptors!(32000);
 
-    let mut cs_output = Output::new(cs, Level::High);
+    // let spi = spi.with_dma(
+    //     dma_channel.configure_for_async(false, DmaPriority::Priority0),
+    //     descriptors,
+    //     rx_descriptors,
+    // );
+
     cs_output.set_low();
     Timer::after_millis(1).await;
     cs_output.set_high();
@@ -33,16 +35,16 @@ pub async fn imu_task<CS: OutputPin>(
 
     Timer::after_secs(1).await;
 
-    let mut icm = icm.initialize(Delay).await.unwrap();
+    let mut icm = icm.initialize(Delay).unwrap();
 
     let mut bank = icm.ll().bank::<{ icm426xx::register_bank::BANK0 }>();
 
     // print WHO_AM_I register
-    let who_am_i = bank.who_am_i().async_read().await;
+    let who_am_i = bank.who_am_i().read();
 
     defmt::info!("WHO_AM_I: {:x}", who_am_i.unwrap().value());
 
-    let afsr = icm.ll().bank::<0>().intf_config1().async_read().await;
+    let afsr = icm.ll().bank::<0>().intf_config1().read();
 
     defmt::info!("AFSR: {:b}", afsr.unwrap().afsr());
 
@@ -56,9 +58,7 @@ pub async fn imu_task<CS: OutputPin>(
 
         // 16 * 4 = 64 bytes, 4 bytes header + 3 * 20 bytes data
         let mut fifo_buffer = [0u32; 16];
-        let buffered_num = time_operation(icm.read_fifo(&mut fifo_buffer))
-            .await
-            .unwrap();
+        let buffered_num = icm.read_fifo(&mut fifo_buffer).unwrap();
 
         defmt::debug!("In-FIFO: {} packets", buffered_num);
 

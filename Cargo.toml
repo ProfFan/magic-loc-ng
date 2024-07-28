@@ -7,7 +7,7 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
-esp-wifi = { version = "0.7.*", default-features = false, features = [
+esp-wifi = { version = "0.6.0", default-features = false, features = [
     "esp-now",
     "async",
     "ps-min-modem",
@@ -15,17 +15,17 @@ esp-wifi = { version = "0.7.*", default-features = false, features = [
     "defmt",
     "phy-enable-usb",
 ] }
-icm426xx = "0.2.*"
+icm426xx = { version = "0.2.*", default-features = false}
 dw3000-ng = { package = "dw3000-ng", version = "0.8.0", features = ["defmt"] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
-esp-hal = { version = "0.19.0", default-features = false, features = [
+esp-hal = { version = "0.18.0", default-features = false, features = [
     "place-spi-driver-in-ram",
     "async",
     "defmt",
 ] }
-esp32s3 = "0.27.0"
-esp-hal-embassy = { version = "0.2.0" }
+# esp32s3 = "0.26.0"
+esp-hal-embassy = { version = "0.1.0", features = ["time-systimer-16mhz"]}
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
@@ -106,6 +106,7 @@ opt-level = 3
 
 [profile.dev]
 lto = "thin"
+opt-level = 1
 [profile.release]
 lto = "fat"
 opt-level = 3
@@ -124,5 +125,5 @@ default = ["esp32s3"]
 partition_table = "partitions.csv"
 
 [patch.crates-io]
-esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-println" }
-esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-backtrace" }
+# esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-println" }
+# esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-backtrace" }
