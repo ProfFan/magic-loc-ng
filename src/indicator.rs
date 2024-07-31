@@ -5,9 +5,7 @@ use esp_hal::{self, gpio::Level};
 /// Waits for a message that contains a duration, then flashes a led for that
 /// duration of time.
 #[embassy_executor::task]
-pub async fn control_led(
-    mut led: esp_hal::gpio::AnyOutput<'static>,
-) {
+pub async fn control_led(mut led: esp_hal::gpio::AnyOutput<'static>) {
     defmt::info!(
         "Starting control_led() on core {}",
         esp_hal::get_core() as usize

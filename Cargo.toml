@@ -15,9 +15,14 @@ esp-wifi = { version = "0.6.0", default-features = false, features = [
     "defmt",
     "phy-enable-usb",
 ] }
-icm426xx = { version = "0.2.*", default-features = false}
+icm426xx = { version = "0.2.*", default-features = false }
 dw3000-ng = { package = "dw3000-ng", version = "0.8.0", features = ["defmt"] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
+
+oled_async = { version = "0.1.0-alpha1" }
+embedded-graphics = { version = "0.8.0" }
+display-interface-i2c = "^0.5"
+display-interface = "^0.5"
 
 esp-hal = { version = "0.18.0", default-features = false, features = [
     "place-spi-driver-in-ram",
@@ -25,7 +30,7 @@ esp-hal = { version = "0.18.0", default-features = false, features = [
     "defmt",
 ] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.1.0", features = ["time-systimer-16mhz"]}
+esp-hal-embassy = { version = "0.1.0", features = ["time-systimer-16mhz"] }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
@@ -40,7 +45,7 @@ esp-backtrace = { version = "0.13", default-features = false, features = [
     # "halt-cores",
     "custom-halt",
 ] }
-esp-println = { version = "0.10.*", default-features = false, features = [
+esp-println = { version = "0.9.*", default-features = false, features = [
     "log",
     # "defmt-espflash",
     "jtag-serial",
@@ -91,7 +96,7 @@ embassy-time = { version = "0.3.1", features = [
     # "tick-hz-16_000_000",
 ] }
 embassy-futures = "*"
-embassy-sync = "0.6.0"
+embassy-sync = "0.5.0"
 embassy-embedded-hal = { version = "0.1", features = ["defmt"] }
 
 scopeguard = { version = "^1.2.0", default-features = false }

@@ -4,6 +4,7 @@
 #![feature(asm_experimental_arch)]
 #![feature(pointer_is_aligned_to)]
 
+mod display;
 mod indicator;
 mod inertial;
 mod network;
@@ -11,11 +12,14 @@ mod ranging;
 mod serial;
 mod utils;
 
-use core::mem::MaybeUninit;
+use core::{cell::RefCell, mem::MaybeUninit};
 
 use defmt as _;
+use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::{task, Spawner};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use embassy_time::Timer;
+use embedded_hal_bus::i2c::RefCellDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
@@ -115,7 +119,27 @@ async fn main(spawner: Spawner) {
 
     // Register 0x07, 1 byte
     bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
-    bms_i2c.write(0x6B, &[0x07, reg07[0] | 0b00100000u8]).await.ok();
+    bms_i2c
+        .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
+        .await
+        .ok();
+
+    // --- Display ---
+    let display_sda = io.pins.gpio6;
+    let display_scl = io.pins.gpio7;
+
+    let i2c1 = make_static!(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2C::new_async(
+        peripherals.I2C1,
+        display_sda,
+        display_scl,
+        400.kHz(),
+        &clocks,
+    )));
+
+    // Scan I2C bus
+    let display_i2c = I2cDevice::new(i2c1);
+
+    spawner.spawn(display::display_task(display_i2c)).unwrap();
 
     // --- IMU ---
     let dma = Dma::new(peripherals.DMA);
@@ -127,8 +151,12 @@ async fn main(spawner: Spawner) {
         .with_mosi(mosi);
 
     spawner
-    .spawn(inertial::imu_task(AnyOutput::new(cs, Level::High), dma_channel, spi))
-    .unwrap();
+        .spawn(inertial::imu_task(
+            AnyOutput::new(cs, Level::High),
+            dma_channel,
+            spi,
+        ))
+        .unwrap();
     // let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
     // let cpu1_fnctn = move || {
     //     let executor_core1 =

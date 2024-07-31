@@ -5,6 +5,7 @@ pub mod handlers;
 // Serial communication module
 
 use core::ptr::addr_of_mut;
+use core::str;
 use core::{future::poll_fn, sync::atomic::AtomicBool, task::Poll};
 
 use bbqueue::{self, GrantR};
@@ -164,7 +165,7 @@ unsafe impl defmt::Logger for GlobalLogger {
 
 #[inline]
 fn do_write(bytes: &[u8]) {
-    // Printer::write_bytes(bytes)
+    Printer.write_bytes_assume_cs(bytes)
 }
 
 /// Write to the USB serial buffer
