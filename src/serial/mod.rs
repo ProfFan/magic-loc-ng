@@ -5,7 +5,6 @@ pub mod handlers;
 // Serial communication module
 
 use core::ptr::addr_of_mut;
-use core::str;
 use core::{future::poll_fn, sync::atomic::AtomicBool, task::Poll};
 
 use bbqueue::{self, GrantR};
@@ -15,7 +14,7 @@ use embassy_sync::waitqueue::AtomicWaker;
 use embedded_io_async::Write;
 use esp_hal::peripherals::Peripherals;
 use esp_hal::Async;
-use esp_hal::{interrupt, peripherals::Interrupt, usb_serial_jtag::UsbSerialJtag};
+use esp_hal::{usb_serial_jtag::UsbSerialJtag};
 use esp_println::Printer;
 
 use esp_hal::macros::ram;

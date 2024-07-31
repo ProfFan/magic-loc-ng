@@ -12,31 +12,27 @@ mod ranging;
 mod serial;
 mod utils;
 
-use core::{cell::RefCell, mem::MaybeUninit};
+use core::mem::MaybeUninit;
 
 use defmt as _;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
-use embassy_executor::{task, Spawner};
+use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use embassy_time::Timer;
-use embedded_hal_bus::i2c::RefCellDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
-    cpu_control::{CpuControl, Stack},
+    cpu_control::Stack,
     dma::*,
-    gpio::{AnyOutput, GpioPin, Io, Level, Output},
-    interrupt,
-    peripherals::{Peripherals, SPI2},
+    gpio::{AnyOutput, Io, Level, Output},
+    peripherals::Peripherals,
     prelude::*,
     rng::Rng,
-    spi::{master::Spi, FullDuplexMode, SpiMode},
+    spi::{master::Spi, SpiMode},
     system::SystemControl,
-    timer::{timg::TimerGroup, OneShotTimer, PeriodicTimer},
 };
-use esp_hal_embassy::InterruptExecutor;
-use esp_wifi::{self, wifi::WifiApDevice, EspWifiInitFor};
-use static_cell::{make_static, StaticCell};
+use esp_wifi::{self, EspWifiInitFor};
+use static_cell::make_static;
 
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();

@@ -2,7 +2,7 @@ use embassy_time::Duration;
 
 use embassy_futures::select::{select, Either};
 use embassy_time::{Instant, Timer};
-use esp_wifi::{self, esp_now::EspNowSender, EspWifiInitialization};
+use esp_wifi::{self, EspWifiInitialization};
 
 use embassy_executor::task;
 use static_cell::make_static;

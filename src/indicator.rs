@@ -1,4 +1,3 @@
-use embassy_sync;
 use embassy_time::Duration;
 use esp_hal::{self, gpio::Level};
 

@@ -1,13 +1,9 @@
 use embassy_time::{Delay, Duration, Ticker, Timer};
-use esp_hal::dma::DmaPriority;
-use esp_hal::gpio::{AnyOutput, Level, Output, OutputPin};
-use esp_hal::peripheral::Peripheral;
+use esp_hal::gpio::AnyOutput;
 use esp_hal::peripherals::SPI2;
-use esp_hal::spi::master::{dma::WithDmaSpi2, Spi};
+use esp_hal::spi::master::Spi;
 use esp_hal::spi::FullDuplexMode;
 use esp_hal::{dma, dma_descriptors};
-
-use crate::utils::time_operation;
 
 #[embassy_executor::task]
 pub async fn imu_task(
