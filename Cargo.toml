@@ -16,13 +16,15 @@ esp-wifi = { version = "0.6.0", default-features = false, features = [
     "phy-enable-usb",
 ] }
 icm426xx = { version = "0.2.*", default-features = false }
-dw3000-ng = { package = "dw3000-ng", version = "0.8.0", features = ["defmt"] }
+dw3000-ng = { package = "dw3000-ng", version = "0.8.*", features = ["defmt"] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
-oled_async = { version = "0.1.0-alpha1" }
 embedded-graphics = { version = "0.8.0" }
 display-interface-i2c = "^0.5"
 display-interface = "^0.5"
+ssd1306 = { version = "0.8.*", git = "https://github.com/sjoerdsimons/ssd1306", branch = "async", features = [
+    "async",
+] }
 
 esp-hal = { version = "0.18.0", default-features = false, features = [
     "place-spi-driver-in-ram",

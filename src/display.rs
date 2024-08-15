@@ -12,14 +12,14 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 
-use oled_async::{prelude::*, Builder};
+use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306Async};
 
 #[embassy_executor::task]
 pub async fn display_task(
     mut i2c_dev: I2cDevice<'static, NoopRawMutex, I2C<'static, I2C1, Async>>,
 ) {
     if i2c_dev.read(0x3C, &mut [0u8; 1]).await.is_err() {
-        defmt::error!("Failed to read from I2C device");
+        defmt::error!("Failed to read from I2C device, display not connected?");
 
         return;
     }
@@ -30,19 +30,10 @@ pub async fn display_task(
         0x40,    // Databyte
     );
 
-    let raw_disp = Builder::new(oled_async::displays::ssd1309::Ssd1309_128_64 {}).connect(di);
-
-    let mut disp: GraphicsMode<_, _> = raw_disp.into();
+    let mut disp = Ssd1306Async::new(di, DisplaySize128x32, DisplayRotation::Rotate0)
+        .into_buffered_graphics_mode();
 
     disp.init().await.unwrap();
-    disp.clear();
-    disp.flush().await.unwrap();
-
-    disp.fill_solid(
-        &Rectangle::new(Point::new(0, 0), Size::new(128, 128)),
-        BinaryColor::On,
-    )
-    .unwrap();
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_6X10)
@@ -54,13 +45,6 @@ pub async fn display_task(
         .unwrap();
 
     disp.flush().await.unwrap();
-
-    disp.set_pixel(0, 0, 1);
-    disp.set_pixel(1, 0, 1);
-    disp.set_pixel(2, 0, 1);
-    disp.set_pixel(3, 0, 1);
-
-    defmt::info!("Display initialized");
 
     loop {
         // Do nothing

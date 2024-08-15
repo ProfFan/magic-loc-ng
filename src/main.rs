@@ -22,15 +22,17 @@ use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
-    cpu_control::Stack,
+    cpu_control::{CpuControl, Stack},
     dma::*,
-    gpio::{AnyOutput, Io, Level, Output},
+    gpio::{AnyInput, AnyOutput, Io, Level, Output, Pull},
+    interrupt,
     peripherals::Peripherals,
     prelude::*,
     rng::Rng,
     spi::{master::Spi, SpiMode},
     system::SystemControl,
 };
+use esp_hal_embassy::InterruptExecutor;
 use esp_wifi::{self, EspWifiInitFor};
 use static_cell::make_static;
 
@@ -116,7 +118,8 @@ async fn main(spawner: Spawner) {
     // Register 0x07, 1 byte
     bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
     bms_i2c
-        .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
+        // .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
+        .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
         .await
         .ok();
 
@@ -153,24 +156,50 @@ async fn main(spawner: Spawner) {
             spi,
         ))
         .unwrap();
-    // let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-    // let cpu1_fnctn = move || {
-    //     let executor_core1 =
-    //         InterruptExecutor::new(system.software_interrupt_control.software_interrupt2);
-    //     let executor_core1 = INT_EXECUTOR_CORE_1.init(executor_core1);
-    //     let spawner = executor_core1.start(interrupt::Priority::Priority1);
 
-    //     loop {}
-    // };
+    let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+    let cpu1_fnctn = move || {
+        let executor_core1 = make_static!(InterruptExecutor::new(
+            system.software_interrupt_control.software_interrupt2
+        ));
+        let spawner = executor_core1.start(interrupt::Priority::Priority1);
 
-    // defmt::info!("Starting core 1");
+        let dw_cs = io.pins.gpio8;
+        let dw_rst = io.pins.gpio9;
+        let dw_irq = io.pins.gpio15;
 
-    // let _guard = cpu_control
-    //     .start_app_core(
-    //         unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
-    //         cpu1_fnctn,
-    //     )
-    //     .unwrap();
+        let dw_sclk = io.pins.gpio36;
+        let dw_mosi = io.pins.gpio35;
+        let dw_miso = io.pins.gpio37;
+
+        let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0, &clocks)
+            .with_sck(dw_sclk)
+            .with_miso(dw_miso)
+            .with_mosi(dw_mosi);
+
+        let dma_channel = dma.channel1;
+
+        // Start the ranging task
+        spawner
+            .spawn(ranging::symmetric_twr_tag_task(
+                spi,
+                AnyOutput::new(dw_cs, Level::High),
+                AnyOutput::new(dw_rst, Level::High),
+                AnyInput::new(dw_irq, Pull::Up),
+                dma_channel,
+            ))
+            .unwrap();
+        loop {}
+    };
+
+    defmt::info!("Starting core 1");
+
+    let _guard = cpu_control
+        .start_app_core(
+            unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
+            cpu1_fnctn,
+        )
+        .unwrap();
 
     let led = io.pins.gpio5;
     spawner
