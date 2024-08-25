@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(asm_experimental_arch)]
 #![feature(pointer_is_aligned_to)]
+#![feature(impl_trait_in_assoc_type)]
 
 mod display;
 mod indicator;
@@ -31,6 +32,7 @@ use esp_hal::{
     rng::Rng,
     spi::{master::Spi, SpiMode},
     system::SystemControl,
+    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
 };
 use esp_hal_embassy::InterruptExecutor;
 use esp_wifi::{self, EspWifiInitFor};
@@ -58,12 +60,10 @@ async fn main(spawner: Spawner) {
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
 
-    // let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-    // let timers = make_static!([OneShotTimer::new(systimer.alarm0.into())]);
-
-    // let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
-    // let timers = make_static!([OneShotTimer::new(timg1.timer0.into())]);
-    let timers = esp_hal::timer::systimer::SystemTimer::new_async(peripherals.SYSTIMER);
+    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+    let timer0: ErasedTimer = timg0.timer0.into();
+    let timer1: ErasedTimer = timg0.timer1.into();
+    let timers = make_static!([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
     esp_hal_embassy::init(&clocks, timers);
 
     init_heap();
@@ -90,7 +90,8 @@ async fn main(spawner: Spawner) {
     Timer::after_secs(2).await;
 
     // --- WIFI ---
-    let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
+    let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    // let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
     // let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
 
     let wifi = peripherals.WIFI;
@@ -118,8 +119,8 @@ async fn main(spawner: Spawner) {
     // Register 0x07, 1 byte
     bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
     bms_i2c
-        // .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
-        .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
+        .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
+        // .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
         .await
         .ok();
 

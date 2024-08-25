@@ -7,7 +7,7 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
-esp-wifi = { version = "0.6.0", default-features = false, features = [
+esp-wifi = { version = "0.7.1", default-features = false, features = [
     "esp-now",
     "async",
     "ps-min-modem",
@@ -26,13 +26,13 @@ ssd1306 = { version = "0.8.*", git = "https://github.com/sjoerdsimons/ssd1306", 
     "async",
 ] }
 
-esp-hal = { version = "0.18.0", default-features = false, features = [
+esp-hal = { version = "0.19.0", default-features = false, features = [
     "place-spi-driver-in-ram",
     "async",
     "defmt",
 ] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.1.0", features = ["time-systimer-16mhz"] }
+esp-hal-embassy = { version = "0.2.0" }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
@@ -91,15 +91,15 @@ embedded-io-async = "0.6.1"
 heapless = { version = "0.8", default-features = false, features = [
     "defmt-03",
 ] }
-embassy-executor = { version = "0.5.0", features = ["nightly"] }
+embassy-executor = { version = "0.6.0", features = ["nightly"] }
 embassy-time = { version = "0.3.1", features = [
     "defmt",
     "generic-queue-16",
     # "tick-hz-16_000_000",
 ] }
 embassy-futures = "*"
-embassy-sync = "0.5.0"
-embassy-embedded-hal = { version = "0.1", features = ["defmt"] }
+embassy-sync = "0.6.0"
+embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
 
 scopeguard = { version = "^1.2.0", default-features = false }
 
@@ -132,5 +132,9 @@ default = ["esp32s3"]
 partition_table = "partitions.csv"
 
 [patch.crates-io]
-# esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-println" }
-# esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "1424f2a43d587b3556bec85abd9bf5691b5b13d8", package = "esp-backtrace" }
+esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-println" }
+esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-backtrace" }
+esp-wifi = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-wifi" }
+esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-hal" }
+esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-hal-embassy" }
+esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-metadata" }
