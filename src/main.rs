@@ -4,14 +4,16 @@
 #![feature(asm_experimental_arch)]
 #![feature(pointer_is_aligned_to)]
 #![feature(impl_trait_in_assoc_type)]
-
+#![feature(async_closure)]
 mod display;
 mod indicator;
 mod inertial;
 mod network;
 mod ranging;
-mod serial;
+// mod serial;
 mod utils;
+
+use esp_fast_serial;
 
 use core::mem::MaybeUninit;
 
@@ -72,7 +74,9 @@ async fn main(spawner: Spawner) {
 
     // Start the serial comm as early as possible
     // Since the `esp-println` impl will block if buffer becomes full
-    spawner.spawn(serial::serial_comm_task()).unwrap();
+    spawner
+        .spawn(esp_fast_serial::serial_comm_task(peripherals.USB_DEVICE))
+        .unwrap();
 
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     let sclk = io.pins.gpio33;
@@ -150,13 +154,13 @@ async fn main(spawner: Spawner) {
         .with_miso(miso)
         .with_mosi(mosi);
 
-    spawner
-        .spawn(inertial::imu_task(
-            AnyOutput::new(cs, Level::High),
-            dma_channel,
-            spi,
-        ))
-        .unwrap();
+    // spawner
+    //     .spawn(inertial::imu_task(
+    //         AnyOutput::new(cs, Level::High),
+    //         dma_channel,
+    //         spi,
+    //     ))
+    //     .unwrap();
 
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
     let cpu1_fnctn = move || {

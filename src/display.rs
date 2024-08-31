@@ -1,6 +1,6 @@
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embedded_hal_async::i2c::I2c;
 use esp_hal::{i2c::I2C, peripherals::I2C1, Async};
 
@@ -8,11 +8,12 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::*,
-    primitives::Rectangle,
     text::{Baseline, Text},
 };
 
-use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306Async};
+use core::fmt::Write;
+
+use ssd1306::{prelude::*, Ssd1306Async};
 
 #[embassy_executor::task]
 pub async fn display_task(
@@ -40,14 +41,16 @@ pub async fn display_task(
         .text_color(BinaryColor::On)
         .build();
 
-    Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
-        .draw(&mut disp)
-        .unwrap();
-
-    disp.flush().await.unwrap();
-
     loop {
-        // Do nothing
+        let mut time_str = heapless::String::<64>::new();
+        write!(time_str, "T={}", Instant::now().as_millis()).unwrap();
+        let text = Text::with_baseline(&time_str, Point::zero(), text_style, Baseline::Top);
+        disp.fill_solid(&text.bounding_box(), BinaryColor::Off)
+            .unwrap();
+        text.draw(&mut disp).unwrap();
+
+        disp.flush().await.unwrap();
+
         Timer::after_millis(1000).await;
     }
 }

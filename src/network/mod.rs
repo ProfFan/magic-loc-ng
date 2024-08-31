@@ -1,59 +1,103 @@
-use embassy_time::Duration;
+use core::cell::RefCell;
 
-use embassy_futures::select::{select, Either};
-use embassy_time::{Instant, Timer};
-use esp_wifi::{self, EspWifiInitialization};
+use critical_section::Mutex;
+use embassy_time::Timer;
+use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
+use esp_wifi_sys;
 
 use embassy_executor::task;
-use static_cell::make_static;
+use ieee80211::{data_frame::builder::DataFrameBuilder, match_frames, mgmt_frame::BeaconFrame};
+use scroll::Pwrite;
+
+extern crate alloc;
 
 #[task]
 pub async fn wifi_test_task(
     wifi_init: EspWifiInitialization,
     wifi_dev: esp_hal::peripherals::WIFI,
 ) {
-    let esp_now = esp_wifi::esp_now::EspNow::new(&wifi_init, wifi_dev).unwrap();
+    let (wifi_device, mut wifi_ctl) =
+        esp_wifi::wifi::new_with_mode(&wifi_init, wifi_dev, esp_wifi::wifi::WifiApDevice).unwrap();
 
-    esp_now.set_channel(7).unwrap();
-    esp_now
-        .set_rate(esp_wifi::esp_now::WifiPhyRate::Rate54m)
-        .unwrap();
+    let ap_config =
+        esp_wifi::wifi::Configuration::AccessPoint(esp_wifi::wifi::AccessPointConfiguration {
+            ssid: "esp-wifi-1".try_into().unwrap(),
+            channel: 7,
+            protocols: Protocol::P802D11BGN.into(),
+            ..Default::default()
+        });
 
-    let (manager, sender, receiver) = esp_now.split();
-    let manager = make_static!(manager);
-    let sender = make_static!(sender);
+    wifi_ctl.set_configuration(&ap_config).unwrap();
+    wifi_ctl.start().await.unwrap();
 
-    manager.set_pmk(&[0x00; 16]).unwrap();
-
-    let buffer = [1u8; 220];
-    let addr = [0xFFu8; 6];
-    let mut sent_count = 0;
-
-    let timeout_time = Instant::now() + Duration::from_secs(10);
-    loop {
-        let timeout_fut = Timer::at(timeout_time);
-        let send_fut = sender.send_async(&addr, &buffer);
-
-        let race = select(timeout_fut, send_fut).await;
-
-        match race {
-            Either::First(_) => {
-                defmt::info!("Sent {} packets", sent_count);
-                break;
-            }
-
-            Either::Second(Ok(_)) => {
-                // defmt::debug!("{}", result);
-                sent_count += 1;
-            }
-
-            Either::Second(Err(err)) => {
-                defmt::error!("Error: {:?}", err);
-            }
-        }
+    if unsafe {
+        esp_wifi_sys::include::esp_wifi_config_80211_tx_rate(
+            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+            esp_wifi_sys::include::wifi_phy_rate_t_WIFI_PHY_RATE_MCS7_SGI,
+        )
+    } != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to set tx rate");
+    } else {
+        defmt::info!("Set tx rate to MCS7 SGI");
     }
 
+    // Set bandwidth
+    if unsafe {
+        esp_wifi_sys::include::esp_wifi_set_bandwidth(
+            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+            esp_wifi_sys::include::wifi_bandwidth_t_WIFI_BW_HT40,
+        )
+    } != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to set bandwidth");
+    } else {
+        defmt::info!("Set bandwidth to HT40");
+    }
+
+    let mut sniffer = wifi_ctl.take_sniffer().unwrap();
+
+    sniffer.set_promiscuous_mode(true).unwrap();
+    sniffer.set_receive_cb(|packet| {
+        let _ = match_frames! {
+            packet.data,
+            data = ieee80211::data_frame::DataFrame  => {
+                defmt::info!("Received data frame: TS = {}, {:?}", packet.rx_cntl.timestamp, &data);
+            }
+        };
+    });
+
+    // e8:65:d4:cb:74:19
+    let transmitter_addr = mac_parser::MACAddress::new([0xe8, 0x65, 0xd4, 0xcb, 0x74, 0x19]);
+    let my_mac = mac_parser::MACAddress::new([0x74, 0x19, 0xff, 0xfc, 0xff, 0xff]);
+
+    // let super_long_payload = [0xFEu8; 20];
+    let mut frame = DataFrameBuilder::new()
+        .to_and_from_ds()
+        .category_data()
+        .payload(b"Hello, world!".as_slice())
+        .destination_address(mac_parser::BROADCAST)
+        .source_address(my_mac)
+        .transmitter_address(transmitter_addr)
+        .receiver_address(mac_parser::BROADCAST)
+        .build();
+
+    frame.header.fcf_flags.set_from_ds(true);
+    frame.header.fcf_flags.set_to_ds(true);
+    frame.header.sequence_control.set_sequence_number(2374);
+
+    defmt::info!("Frame: {:?}", &frame);
+
+    let mut frame_buf = [0u8; 1000];
+
+    let length = frame_buf.pwrite(frame, 0).unwrap();
+    let frame_buf = &frame_buf[..length];
+
+    defmt::info!("Frame buf: {:x}", frame_buf);
+
     loop {
-        Timer::after_secs(10).await;
+        sniffer.send_raw_frame(false, &frame_buf, true).unwrap();
+
+        Timer::after_secs(3).await;
     }
 }

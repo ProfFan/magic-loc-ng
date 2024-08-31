@@ -7,16 +7,19 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
+esp-fast-serial = "0.2.0"
 esp-wifi = { version = "0.7.1", default-features = false, features = [
     "esp-now",
+    "sniffer",
     "async",
     "ps-min-modem",
     "wifi",
     "defmt",
     "phy-enable-usb",
 ] }
+esp-wifi-sys = { version = "0.4.0" }
 icm426xx = { version = "0.2.*", default-features = false }
-dw3000-ng = { package = "dw3000-ng", version = "0.8.*", features = ["defmt"] }
+dw3000-ng = { package = "dw3000-ng", version = "0.9", features = ["defmt"] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
 embedded-graphics = { version = "0.8.0" }
@@ -108,6 +111,13 @@ arbitrary-int = "^1.2"
 
 anyhow = { version = "1.0", default-features = false }
 
+ieee80211 = { version = "0.4", features = ["defmt"] }
+scroll = { version = "0.12", default-features = false }
+mac-parser = { version = "0.1.6", default-features = false }
+
+nb = "1.0"
+menu = "0.6.0"
+
 [profile.dev.package.esp-storage]
 opt-level = 3
 
@@ -138,3 +148,5 @@ esp-wifi = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97
 esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-hal" }
 esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-hal-embassy" }
 esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-metadata" }
+dw3000-ng = { path = "../dw3000" }
+ieee80211 = { path = "../ieee80211-rs" }
