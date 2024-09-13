@@ -60,8 +60,11 @@ esp-println = { version = "0.9.*", default-features = false, features = [
 bbqueue = { version = "0.5.1" }
 
 # esp-println = { version = "0.7.1", default-features = false, features = [
-esp-storage = { version = "0.3" }
+esp-storage = { version = "0.3", features = ["nor-flash"] }
 embedded-storage = "0.3.0"
+embedded-storage-async = "0.4"
+sequential-storage = { version = "3.0", features = ["defmt-03"] }
+
 # postcard = { version = "1.0.*", features = ["use-defmt"] }
 
 # By default, `serde` has the `std` feature enabled, which makes it unsuitable for embedded targets
@@ -111,12 +114,13 @@ arbitrary-int = "^1.2"
 
 anyhow = { version = "1.0", default-features = false }
 
-ieee80211 = { version = "0.4", features = ["defmt"] }
+ieee80211 = { version = "0.5", features = ["defmt"] }
 scroll = { version = "0.12", default-features = false }
 mac-parser = { version = "0.1.6", default-features = false }
 
 nb = "1.0"
 menu = "0.6.0"
+# rhai = { version = "1.19.0", features = ["no_std", "no_optimize", "no_module", "f32_float", "only_i64"], default-features = false }
 
 [profile.dev.package.esp-storage]
 opt-level = 3
@@ -124,10 +128,15 @@ opt-level = 3
 [profile.dev]
 lto = "thin"
 opt-level = 1
+
 [profile.release]
 lto = "fat"
 opt-level = 3
 debug = true
+codegen-units = 1
+
+# [profile.release.package.rhai]
+# opt-level = "z"
 
 [features]
 esp32s3 = [
@@ -149,4 +158,3 @@ esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f
 esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-hal-embassy" }
 esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "0e333f7aa2d36be97f5e42e427615e5e9dd629f6", package = "esp-metadata" }
 dw3000-ng = { path = "../dw3000" }
-ieee80211 = { path = "../ieee80211-rs" }

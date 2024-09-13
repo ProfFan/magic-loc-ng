@@ -1,13 +1,14 @@
-use core::cell::RefCell;
-
-use critical_section::Mutex;
 use embassy_time::Timer;
 use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
 use esp_wifi_sys;
 
 use embassy_executor::task;
-use ieee80211::{data_frame::builder::DataFrameBuilder, match_frames, mgmt_frame::BeaconFrame};
-use scroll::Pwrite;
+use ieee80211::{
+    common::{FrameControlField, FrameType},
+    data_frame::builder::DataFrameBuilder,
+    match_frames,
+};
+use scroll::{Pread, Pwrite};
 
 extern crate alloc;
 
@@ -16,12 +17,13 @@ pub async fn wifi_test_task(
     wifi_init: EspWifiInitialization,
     wifi_dev: esp_hal::peripherals::WIFI,
 ) {
-    let (wifi_device, mut wifi_ctl) =
+    let (_wifi_device, mut wifi_ctl) =
         esp_wifi::wifi::new_with_mode(&wifi_init, wifi_dev, esp_wifi::wifi::WifiApDevice).unwrap();
 
     let ap_config =
         esp_wifi::wifi::Configuration::AccessPoint(esp_wifi::wifi::AccessPointConfiguration {
             ssid: "esp-wifi-1".try_into().unwrap(),
+            ssid_hidden: true,
             channel: 7,
             protocols: Protocol::P802D11BGN.into(),
             ..Default::default()
@@ -59,10 +61,16 @@ pub async fn wifi_test_task(
 
     sniffer.set_promiscuous_mode(true).unwrap();
     sniffer.set_receive_cb(|packet| {
+        if let Ok(fcf) = packet.data.pread(0).map(FrameControlField::from_bits) {
+            if let FrameType::Data(data_subtype) = fcf.frame_type() {
+                defmt::debug!("Received data frame with subtype: {:?}", data_subtype);
+            }
+        }
+
         let _ = match_frames! {
             packet.data,
             data = ieee80211::data_frame::DataFrame  => {
-                defmt::info!("Received data frame: TS = {}, {:?}", packet.rx_cntl.timestamp, &data);
+                defmt::debug!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
             }
         };
     });
@@ -72,7 +80,7 @@ pub async fn wifi_test_task(
     let my_mac = mac_parser::MACAddress::new([0x74, 0x19, 0xff, 0xfc, 0xff, 0xff]);
 
     // let super_long_payload = [0xFEu8; 20];
-    let mut frame = DataFrameBuilder::new()
+    let frame = DataFrameBuilder::new()
         .to_and_from_ds()
         .category_data()
         .payload(b"Hello, world!".as_slice())
@@ -82,9 +90,9 @@ pub async fn wifi_test_task(
         .receiver_address(mac_parser::BROADCAST)
         .build();
 
-    frame.header.fcf_flags.set_from_ds(true);
-    frame.header.fcf_flags.set_to_ds(true);
-    frame.header.sequence_control.set_sequence_number(2374);
+    // frame.header.subtype = DataFrameSubtype::Null;
+    // frame.header.fcf_flags.set_to_ds(true);
+    // frame.header.sequence_control.set_sequence_number(2374);
 
     defmt::info!("Frame: {:?}", &frame);
 

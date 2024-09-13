@@ -67,9 +67,15 @@ pub async fn symmetric_twr_tag_task(
 
     Timer::after(Duration::from_millis(200)).await;
 
-    let mut dw3000 = dw3000_ng::DW3000::new(spidev)
-        .init()
-        .expect("Failed init.")
+    let dw3000 = dw3000_ng::DW3000::new(spidev).init();
+    if let Err(e) = dw3000 {
+        defmt::error!("DW3000 failed init: {}", e);
+        core::future::pending::<()>().await;
+        loop {}
+    }
+
+    let mut dw3000 = dw3000
+        .unwrap()
         .config_async(dwm_config, |d: u32| Timer::after_micros(d as u64))
         // .config(dwm_config, |d: u32| embassy_time::Delay.delay_us(d))
         .await

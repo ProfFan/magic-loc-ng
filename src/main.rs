@@ -1,26 +1,29 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 #![feature(asm_experimental_arch)]
 #![feature(pointer_is_aligned_to)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
+
+mod configuration;
+mod console;
 mod display;
 mod indicator;
 mod inertial;
 mod network;
 mod ranging;
-// mod serial;
 mod utils;
 
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use esp_fast_serial;
+use esp_hal_embassy::InterruptExecutor;
+use static_cell::StaticCell;
 
 use core::mem::MaybeUninit;
 
 use defmt as _;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
@@ -35,10 +38,9 @@ use esp_hal::{
     spi::{master::Spi, SpiMode},
     system::SystemControl,
     timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
+    Async,
 };
-use esp_hal_embassy::InterruptExecutor;
 use esp_wifi::{self, EspWifiInitFor};
-use static_cell::make_static;
 
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
@@ -65,10 +67,21 @@ async fn main(spawner: Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
     let timer0: ErasedTimer = timg0.timer0.into();
     let timer1: ErasedTimer = timg0.timer1.into();
-    let timers = make_static!([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
+    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, ErasedTimer>; 2]> = StaticCell::new();
+    let timers = TIMERS_STATIC.init([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
     esp_hal_embassy::init(&clocks, timers);
 
     init_heap();
+
+    let mut config_store = configuration::ConfigurationStore::new().unwrap();
+
+    let mut buff = [0u8; 256];
+    let ver = config_store
+        .get::<u8>(&mut buff, b"MVERSION")
+        .await
+        .unwrap();
+
+    defmt::info!("Configuration version: {}", ver);
 
     // Spawners
 
@@ -82,7 +95,7 @@ async fn main(spawner: Spawner) {
     let sclk = io.pins.gpio33;
     let mosi = io.pins.gpio40;
     let miso = io.pins.gpio47;
-    let cs = io.pins.gpio34;
+    let imu_cs = io.pins.gpio34;
     let baro_cs = io.pins.gpio11;
 
     // Prevent the barometer from operating in I2C mode
@@ -132,7 +145,10 @@ async fn main(spawner: Spawner) {
     let display_sda = io.pins.gpio6;
     let display_scl = io.pins.gpio7;
 
-    let i2c1 = make_static!(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2C::new_async(
+    static I2C1: StaticCell<
+        Mutex<NoopRawMutex, esp_hal::i2c::I2C<'static, esp_hal::peripherals::I2C1, Async>>,
+    > = StaticCell::new();
+    let i2c1 = I2C1.init(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2C::new_async(
         peripherals.I2C1,
         display_sda,
         display_scl,
@@ -154,18 +170,19 @@ async fn main(spawner: Spawner) {
         .with_miso(miso)
         .with_mosi(mosi);
 
-    // spawner
-    //     .spawn(inertial::imu_task(
-    //         AnyOutput::new(cs, Level::High),
-    //         dma_channel,
-    //         spi,
-    //     ))
-    //     .unwrap();
+    spawner
+        .spawn(inertial::imu_task(
+            AnyOutput::new(imu_cs, Level::High),
+            dma_channel,
+            spi,
+        ))
+        .unwrap();
 
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
     let cpu1_fnctn = move || {
-        let executor_core1 = make_static!(InterruptExecutor::new(
-            system.software_interrupt_control.software_interrupt2
+        static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
+        let executor_core1 = EXECUTOR_CORE1.init(InterruptExecutor::new(
+            system.software_interrupt_control.software_interrupt2,
         ));
         let spawner = executor_core1.start(interrupt::Priority::Priority1);
 
@@ -211,9 +228,11 @@ async fn main(spawner: Spawner) {
         .spawn(indicator::control_led(AnyOutput::new(led, Level::Low)))
         .ok();
 
+    // Start the interactive console
+    spawner.spawn(console::console()).unwrap();
+
     // A never-ending heartbeat
     loop {
         Timer::after_secs(5).await;
-        defmt::info!("Still alive!");
     }
 }
