@@ -1,3 +1,6 @@
+use alloc::sync::Arc;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Duration, Ticker, Timer};
 use esp_hal::gpio::AnyOutput;
 use esp_hal::peripherals::SPI2;
@@ -5,13 +8,18 @@ use esp_hal::spi::master::Spi;
 use esp_hal::spi::FullDuplexMode;
 use esp_hal::{dma, dma_descriptors};
 
+use crate::configuration::ConfigurationStore;
+
 #[embassy_executor::task]
 pub async fn imu_task(
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: AnyOutput<'static>,
     dma_channel: dma::ChannelCreator<0>,
     spi: Spi<'static, SPI2, FullDuplexMode>,
 ) {
     defmt::info!("Starting IMU task");
+
+    config_store.lock().await.registry.register::<u32>(b"IMU_RATE").unwrap();
 
     let (descriptors, rx_descriptors) = dma_descriptors!(32000);
 

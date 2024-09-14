@@ -2,6 +2,8 @@
 //!
 //! Provides a centralized configuration store for the device.
 
+use core::any::TypeId;
+
 use binrw::{binrw, io::Cursor, BinRead, BinResult, BinWrite};
 use embassy_embedded_hal::adapter::{BlockingAsync, YieldingAsync};
 use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
@@ -14,37 +16,23 @@ use sequential_storage::{
     map::{fetch_item, Value},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
-#[binrw]
-#[brw(little)]
-pub struct UwbConfig {
-    /// 16-bit short address
-    pub short_address: u16,
-    /// UWB MAC address
-    pub long_address: [u8; 6],
-    /// PAN ID
-    pub pan_id: u16,
-    /// Channel
-    pub channel: u8,
-}
+pub mod registry;
 
-impl Default for UwbConfig {
-    fn default() -> Self {
-        Self {
-            short_address: 0,
-            long_address: [0; 6],
-            pan_id: 0,
-            channel: 0,
-        }
-    }
-}
+pub use registry::Registry;
 
 pub type KeyType = [u8; 8]; // 64-bit key
 const PAGE_COUNT: usize = 16;
 
+#[derive(Debug)]
+pub enum ConfigurationError {
+    KeyTypeMismatch,
+    StorageError(sequential_storage::Error<FlashStorageError>),
+}
+
 pub struct ConfigurationStore {
     storage_partition: esp_partition_table::PartitionEntry,
     cache: KeyPointerCache<PAGE_COUNT, KeyType, 16>,
+    pub registry: Registry,
 }
 
 impl ConfigurationStore {
@@ -82,6 +70,7 @@ impl ConfigurationStore {
         Some(Self {
             storage_partition: config_part,
             cache: KeyPointerCache::new(),
+            registry: Registry::new(),
         })
     }
 
@@ -100,11 +89,16 @@ impl ConfigurationStore {
     /// * `Ok(Some(T))` - The value was found and returned
     /// * `Ok(None)` - The value was not found
     /// * `Err(sequential_storage::Error<FlashStorageError>)` - An error occurred during the read operation
-    pub async fn get<'b, T: Value<'b>>(
+    pub async fn get<'b, T: Value<'b> + 'static>(
         &mut self,
         buffer: &'b mut [u8],
         key: &KeyType,
-    ) -> Result<Option<T>, sequential_storage::Error<FlashStorageError>> {
+    ) -> Result<Option<T>, ConfigurationError> {
+        let type_id = self.registry.get(key);
+        if type_id.is_some() && type_id.unwrap() != &TypeId::of::<T>() {
+            return Err(ConfigurationError::KeyTypeMismatch);
+        }
+
         let mut storage = YieldingAsync::new(BlockingAsync::new(FlashStorage::new()));
         fetch_item(
             &mut storage,
@@ -114,6 +108,7 @@ impl ConfigurationStore {
             key,
         )
         .await
+        .map_err(ConfigurationError::StorageError)
     }
 
     /// Set a value in the configuration store
@@ -125,11 +120,18 @@ impl ConfigurationStore {
     /// # Returns
     /// * `Ok(())` - The value was set
     /// * `Err(sequential_storage::Error<FlashStorageError>)` - An error occurred during the write operation
-    pub async fn set<'a, T: Value<'a>>(
+    pub async fn set<'a, T: Value<'a> + 'static>(
         &mut self,
         key: &KeyType,
         value: T,
-    ) -> Result<(), sequential_storage::Error<FlashStorageError>> {
+    ) -> Result<(), ConfigurationError> {
+        let type_id = TypeId::of::<T>();
+        let key_type = self.registry.get(key);
+
+        if key_type.is_some() && key_type.unwrap() != &type_id {
+            return Err(ConfigurationError::KeyTypeMismatch);
+        }
+
         let mut storage = YieldingAsync::new(BlockingAsync::new(FlashStorage::new()));
         let mut buffer = [0; 256];
         store_item(
@@ -141,5 +143,6 @@ impl ConfigurationStore {
             &value,
         )
         .await
+        .map_err(ConfigurationError::StorageError)
     }
 }

@@ -14,12 +14,17 @@ mod network;
 mod ranging;
 mod utils;
 
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
+use embassy_sync::{
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    mutex::Mutex,
+};
 use esp_fast_serial;
 use esp_hal_embassy::InterruptExecutor;
 use static_cell::StaticCell;
 
 use core::mem::MaybeUninit;
+
+extern crate alloc;
 
 use defmt as _;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
@@ -73,10 +78,19 @@ async fn main(spawner: Spawner) {
 
     init_heap();
 
-    let mut config_store = configuration::ConfigurationStore::new().unwrap();
+    let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
+        CriticalSectionRawMutex,
+        _,
+    >::new(
+        configuration::ConfigurationStore::new().unwrap()
+    ));
+
+    config_store.lock().await.registry.register::<u8>(b"MVERSION").unwrap();
 
     let mut buff = [0u8; 256];
     let ver = config_store
+        .lock()
+        .await
         .get::<u8>(&mut buff, b"MVERSION")
         .await
         .unwrap();
@@ -172,6 +186,7 @@ async fn main(spawner: Spawner) {
 
     spawner
         .spawn(inertial::imu_task(
+            config_store.clone(),
             AnyOutput::new(imu_cs, Level::High),
             dma_channel,
             spi,
@@ -179,6 +194,7 @@ async fn main(spawner: Spawner) {
         .unwrap();
 
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+    let config_store_ = config_store.clone();
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 = EXECUTOR_CORE1.init(InterruptExecutor::new(
@@ -204,6 +220,7 @@ async fn main(spawner: Spawner) {
         // Start the ranging task
         spawner
             .spawn(ranging::symmetric_twr_tag_task(
+                config_store_,
                 spi,
                 AnyOutput::new(dw_cs, Level::High),
                 AnyOutput::new(dw_rst, Level::High),
@@ -229,7 +246,9 @@ async fn main(spawner: Spawner) {
         .ok();
 
     // Start the interactive console
-    spawner.spawn(console::console()).unwrap();
+    spawner
+        .spawn(console::console(config_store.clone()))
+        .unwrap();
 
     // A never-ending heartbeat
     loop {

@@ -120,6 +120,7 @@ mac-parser = { version = "0.1.6", default-features = false }
 
 nb = "1.0"
 menu = "0.6.0"
+# noline = { version = "0.2.0", default-features = false }
 # rhai = { version = "1.19.0", features = ["no_std", "no_optimize", "no_module", "f32_float", "only_i64"], default-features = false }
 
 [profile.dev.package.esp-storage]

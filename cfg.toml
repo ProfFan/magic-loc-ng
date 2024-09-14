@@ -8,3 +8,4 @@ ampdu_tx_enable = 0
 rx_ba_win = 16
 max_burst_size = 6
 tick_rate_hz = 1000
+country_code = "US"

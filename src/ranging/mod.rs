@@ -1,12 +1,13 @@
 use core::cell::RefCell;
 
+use alloc::sync::Arc;
 use dw3000_ng::{
     self,
     configs::{StsLen, StsMode},
     hl::ConfigGPIOs,
 };
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice;
-use embassy_sync::blocking_mutex::NoopMutex;
+use embassy_sync::{blocking_mutex::{raw::CriticalSectionRawMutex, NoopMutex}, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use embedded_hal::delay::DelayNs;
 use esp_hal::macros::ram;
@@ -17,7 +18,32 @@ use esp_hal::{
     spi::{master::Spi, FullDuplexMode},
 };
 
-use crate::utils::nonblocking_wait;
+use crate::{configuration::ConfigurationStore, utils::nonblocking_wait};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
+#[repr(C)]
+pub struct UwbConfig {
+    /// 16-bit short address
+    pub short_address: u16,
+    /// UWB MAC address
+    pub long_address: [u8; 6],
+    /// PAN ID
+    pub pan_id: u16,
+    /// Channel
+    pub channel: u8,
+}
+
+impl Default for UwbConfig {
+    fn default() -> Self {
+        Self {
+            short_address: 0,
+            long_address: [0; 6],
+            pan_id: 0,
+            channel: 0,
+        }
+    }
+}
+
 
 /// Task for the UWB Tag
 ///
@@ -39,6 +65,7 @@ use crate::utils::nonblocking_wait;
 #[embassy_executor::task(pool_size = 1)]
 #[ram]
 pub async fn symmetric_twr_tag_task(
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     bus: Spi<'static, SPI3, FullDuplexMode>,
     cs_gpio: AnyOutput<'static>,
     mut rst_gpio: AnyOutput<'static>,
@@ -46,6 +73,8 @@ pub async fn symmetric_twr_tag_task(
     dma_channel: ChannelCreator1,
 ) -> ! {
     defmt::info!("Starting TWR Tag Task!");
+
+    config_store.lock().await.registry.register::<UwbConfig>(b"UWB_CONF").unwrap();
 
     let bus = NoopMutex::new(RefCell::new(bus));
     let spidev = SpiDevice::new(&bus, cs_gpio);
