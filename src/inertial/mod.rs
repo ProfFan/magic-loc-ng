@@ -19,7 +19,12 @@ pub async fn imu_task(
 ) {
     defmt::info!("Starting IMU task");
 
-    config_store.lock().await.registry.register::<u32>(b"IMU_RATE").unwrap();
+    config_store
+        .lock()
+        .await
+        .registry
+        .register::<u32>(b"IMU_RATE")
+        .unwrap();
 
     let (descriptors, rx_descriptors) = dma_descriptors!(32000);
 

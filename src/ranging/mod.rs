@@ -7,7 +7,10 @@ use dw3000_ng::{
     hl::ConfigGPIOs,
 };
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice;
-use embassy_sync::{blocking_mutex::{raw::CriticalSectionRawMutex, NoopMutex}, mutex::Mutex};
+use embassy_sync::{
+    blocking_mutex::{raw::CriticalSectionRawMutex, NoopMutex},
+    mutex::Mutex,
+};
 use embassy_time::{Duration, Timer};
 use embedded_hal::delay::DelayNs;
 use esp_hal::macros::ram;
@@ -44,7 +47,6 @@ impl Default for UwbConfig {
     }
 }
 
-
 /// Task for the UWB Tag
 ///
 /// This task runs the Tag side state machine
@@ -74,7 +76,12 @@ pub async fn symmetric_twr_tag_task(
 ) -> ! {
     defmt::info!("Starting TWR Tag Task!");
 
-    config_store.lock().await.registry.register::<UwbConfig>(b"UWB_CONF").unwrap();
+    config_store
+        .lock()
+        .await
+        .registry
+        .register::<UwbConfig>(b"UWB_CONF")
+        .unwrap();
 
     let bus = NoopMutex::new(RefCell::new(bus));
     let spidev = SpiDevice::new(&bus, cs_gpio);

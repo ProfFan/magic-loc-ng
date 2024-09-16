@@ -4,10 +4,7 @@
 
 use core::any::TypeId;
 
-use binrw::{binrw, io::Cursor, BinRead, BinResult, BinWrite};
 use embassy_embedded_hal::adapter::{BlockingAsync, YieldingAsync};
-use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
-use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
 use sequential_storage::cache::KeyPointerCache;
 use sequential_storage::map::store_item;

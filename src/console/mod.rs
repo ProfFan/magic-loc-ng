@@ -6,9 +6,11 @@ use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 
+mod apps;
+
 const MAX_BUFFER_SIZE: usize = 128;
 
-#[derive(Debug, defmt::Format)]
+#[derive(Debug, defmt::Format, PartialEq, Eq)]
 pub enum Token<'a> {
     /// A string
     String(&'a str),
@@ -108,6 +110,21 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
 
         let tokens = parse_arguments(command);
 
-        defmt::info!("Tokens: {:?}", tokens);
+        defmt::debug!("Tokens: {:?}", tokens);
+
+        if tokens.len() == 0 {
+            continue;
+        }
+
+        if let Token::String(app) = tokens[0] {
+            match app {
+                "conf" => {
+                    let _ = apps::conf(config_store.clone(), &tokens).await;
+                }
+                _ => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");
+                }
+            }
+        }
     }
 }

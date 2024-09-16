@@ -4,6 +4,7 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
+#![feature(let_chains)]
 
 mod configuration;
 mod console;
@@ -85,7 +86,12 @@ async fn main(spawner: Spawner) {
         configuration::ConfigurationStore::new().unwrap()
     ));
 
-    config_store.lock().await.registry.register::<u8>(b"MVERSION").unwrap();
+    config_store
+        .lock()
+        .await
+        .registry
+        .register::<u8>(b"MVERSION")
+        .unwrap();
 
     let mut buff = [0u8; 256];
     let ver = config_store
@@ -200,7 +206,7 @@ async fn main(spawner: Spawner) {
         let executor_core1 = EXECUTOR_CORE1.init(InterruptExecutor::new(
             system.software_interrupt_control.software_interrupt2,
         ));
-        let spawner = executor_core1.start(interrupt::Priority::Priority1);
+        let spawner = executor_core1.start(interrupt::Priority::Priority2);
 
         let dw_cs = io.pins.gpio8;
         let dw_rst = io.pins.gpio9;

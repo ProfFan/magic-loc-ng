@@ -94,7 +94,7 @@ pub async fn wifi_test_task(
     // frame.header.fcf_flags.set_to_ds(true);
     // frame.header.sequence_control.set_sequence_number(2374);
 
-    defmt::info!("Frame: {:?}", &frame);
+    defmt::info!("Frame: {:?}", frame);
 
     let mut frame_buf = [0u8; 1000];
 
