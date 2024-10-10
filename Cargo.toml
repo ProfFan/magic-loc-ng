@@ -8,7 +8,7 @@ resolver = "2"
 
 [dependencies]
 esp-fast-serial = { version = "0.2.0", path = "../esp-fast-serial" }
-esp-wifi-sys = { version = "0.5" }
+esp-wifi-sys = { version = "0.6.*" }
 icm426xx = { version = "0.2.*", default-features = false, path = "../icm426xx" }
 dw3000-ng = { package = "dw3000-ng", version = "0.9", features = ["defmt"] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
@@ -20,18 +20,18 @@ ssd1306 = { version = "0.8.*", git = "https://github.com/sjoerdsimons/ssd1306", 
     "async",
 ] }
 
-esp-hal = { version = "0.20.1", default-features = false, features = [
+esp-hal = { version = "0.21.0", default-features = false, features = [
     "defmt",
 ] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.3.0" }
+esp-hal-embassy = { version = "0.4.0" }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
 embedded-hal-bus = { version = "0.2", features = ["async"] }
 
-esp-wifi = { version = "0.9.1", default-features = false, features = [
+esp-wifi = { version = "0.10.*", default-features = false, features = [
     "esp-now",
     "async",
     "sniffer",
@@ -49,7 +49,7 @@ esp-backtrace = { version = "0.14.*", default-features = false, features = [
     # "halt-cores",
     "custom-halt",
 ] }
-esp-println = { version = "0.11.*", default-features = false, features = [
+esp-println = { version = "0.12.*", default-features = false, features = [
     "log",
     # "defmt-espflash",
     "jtag-serial",
@@ -77,7 +77,7 @@ critical-section = { version = "1.1.2", default-features = false }
 # log = { version = "0.4.18" }
 defmt = { package = "defmt", version = "0.3.8", features = ["encoding-rzcobs"] }
 # defmt-rtt = "0.4.1"
-esp-alloc = { version = "0.4.0" }
+esp-alloc = { version = "0.5.*" }
 smoltcp = { version = "0.11.0", default-features = false, features = [
     "proto-igmp",
     "proto-ipv4",
@@ -152,12 +152,12 @@ default = ["esp32s3"]
 partition_table = "partitions.csv"
 
 [patch.crates-io]
-esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-println" }
-esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-backtrace" }
-esp-wifi = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-wifi" }
-esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "30d43461335cf5f58317dfc78a5397f48dae2e27", package = "esp-wifi-sys" }
-esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal" }
-esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal-embassy" }
-esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-metadata" }
-esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-alloc" }
+# esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-println" }
+# esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-backtrace" }
+# esp-wifi = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-wifi" }
+# esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "30d43461335cf5f58317dfc78a5397f48dae2e27", package = "esp-wifi-sys" }
+# esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal" }
+# esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal-embassy" }
+# esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-metadata" }
+# esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-alloc" }
 dw3000-ng = { path = "../dw3000" }

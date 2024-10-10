@@ -137,7 +137,7 @@ async fn main(spawner: Spawner) {
     let bms_sda = io.pins.gpio1;
     let bms_scl = io.pins.gpio2;
 
-    let mut bms_i2c = esp_hal::i2c::I2C::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz());
+    let mut bms_i2c = esp_hal::i2c::I2c::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz());
     let mut reg07 = [0u8; 1];
 
     // Register 0x07, 1 byte
@@ -153,9 +153,9 @@ async fn main(spawner: Spawner) {
     let display_scl = io.pins.gpio7;
 
     static I2C1: StaticCell<
-        Mutex<NoopRawMutex, esp_hal::i2c::I2C<'static, esp_hal::peripherals::I2C1, Async>>,
+        Mutex<NoopRawMutex, esp_hal::i2c::I2c<'static, esp_hal::peripherals::I2C1, Async>>,
     > = StaticCell::new();
-    let i2c1 = I2C1.init(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2C::new_async(
+    let i2c1 = I2C1.init(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2c::new_async(
         peripherals.I2C1,
         display_sda,
         display_scl,
@@ -189,9 +189,8 @@ async fn main(spawner: Spawner) {
     let config_store_ = config_store.clone();
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
-        let executor_core1 = EXECUTOR_CORE1.init(InterruptExecutor::new(
-            sw_ints.software_interrupt2,
-        ));
+        let executor_core1 =
+            EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
         let spawner = executor_core1.start(interrupt::Priority::Priority2);
 
         let dw_cs = io.pins.gpio8;
