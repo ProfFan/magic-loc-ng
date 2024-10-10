@@ -1,12 +1,15 @@
+use core::cell::OnceCell;
+
 use alloc::sync::Arc;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Duration, Ticker, Timer};
+use esp_hal::dma::{DmaPriority, DmaRxBuf, DmaTxBuf};
 use esp_hal::gpio::Output;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
 use esp_hal::spi::FullDuplexMode;
-use esp_hal::{dma, dma_descriptors};
+use esp_hal::{dma, dma_buffers};
 
 use crate::configuration::ConfigurationStore;
 
@@ -26,34 +29,40 @@ pub async fn imu_task(
         .register::<u32>(b"IMU_RATE")
         .unwrap();
 
-    let (descriptors, rx_descriptors) = dma_descriptors!(32000);
+    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(256);
+    let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
-    // let spi = spi.with_dma(
-    //     dma_channel.configure_for_async(false, DmaPriority::Priority0),
-    //     descriptors,
-    //     rx_descriptors,
-    // );
+    let spi = spi
+        .with_dma(dma_channel.configure_for_async(false, DmaPriority::Priority0))
+        .with_buffers(dma_rx_buf, dma_tx_buf);
 
     cs_output.set_low();
     Timer::after_millis(1).await;
     cs_output.set_high();
 
-    let spidev = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, cs_output).unwrap();
+    let spi_bus = OnceCell::<Mutex<NoopRawMutex, _>>::new();
+    let _ = spi_bus.set(Mutex::new(spi));
+
+    let spidev = embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(
+        spi_bus.get().unwrap(),
+        cs_output,
+    );
 
     let icm = icm426xx::ICM42688::new(spidev);
 
     Timer::after_secs(1).await;
 
-    let mut icm = icm.initialize(Delay).unwrap();
+    let mut icm = icm.initialize(Delay).await.unwrap();
 
     let mut bank = icm.ll().bank::<{ icm426xx::register_bank::BANK0 }>();
 
     // print WHO_AM_I register
-    let who_am_i = bank.who_am_i().read();
+    let who_am_i = bank.who_am_i().async_read().await;
 
     defmt::info!("WHO_AM_I: {:x}", who_am_i.unwrap().value());
 
-    let afsr = icm.ll().bank::<0>().intf_config1().read();
+    let afsr = icm.ll().bank::<0>().intf_config1().async_read().await;
 
     defmt::info!("AFSR: {:b}", afsr.unwrap().afsr());
 
@@ -67,7 +76,7 @@ pub async fn imu_task(
 
         // 16 * 4 = 64 bytes, 4 bytes header + 3 * 20 bytes data
         let mut fifo_buffer = [0u32; 16];
-        let buffered_num = icm.read_fifo(&mut fifo_buffer).unwrap();
+        let buffered_num = icm.read_fifo(&mut fifo_buffer).await.unwrap();
 
         defmt::debug!("In-FIFO: {} packets", buffered_num);
 
