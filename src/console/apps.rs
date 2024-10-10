@@ -78,6 +78,20 @@ pub async fn conf<'a>(
                 }
             }
         }
+
+        if type_id == TypeId::of::<u32>() {
+            let value = value.parse::<u32>().unwrap();
+            let result = config_store.lock().await.set::<u32>(&key, value).await;
+            match result {
+                Ok(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Config set\n");
+                }
+                Err(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
+                    return Err(());
+                }
+            }
+        }
     }
 
     if args[1] == Token::String("get") {
@@ -97,6 +111,29 @@ pub async fn conf<'a>(
                 Ok(value) => match value {
                     Some(value) => {
                         let s = alloc::format!("{:x}\n", value);
+                        let _ = esp_fast_serial::write_to_usb_serial_buffer(s.as_bytes());
+                    }
+                    None => {
+                        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Value not found\n");
+                    }
+                },
+                Err(e) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
+                }
+            }
+        }
+
+        if type_id.unwrap() == TypeId::of::<u32>() {
+            let value = config_store
+                .lock()
+                .await
+                .get::<u32>(&mut buffer, &key)
+                .await;
+
+            match value {
+                Ok(value) => match value {
+                    Some(value) => {
+                        let s = alloc::format!("{}\n", value);
                         let _ = esp_fast_serial::write_to_usb_serial_buffer(s.as_bytes());
                     }
                     None => {

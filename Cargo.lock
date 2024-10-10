@@ -441,7 +441,7 @@ dependencies = [
 
 [[package]]
 name = "dw3000-ng"
-version = "0.9.0"
+version = "1.0.0"
 dependencies = [
  "byte",
  "defmt",
@@ -1394,7 +1394,7 @@ dependencies = [
  "defmt",
  "display-interface",
  "display-interface-i2c",
- "dw3000-ng 0.9.0",
+ "dw3000-ng 1.0.0",
  "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",

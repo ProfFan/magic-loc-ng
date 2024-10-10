@@ -23,8 +23,6 @@ use esp_fast_serial;
 use esp_hal_embassy::InterruptExecutor;
 use static_cell::StaticCell;
 
-use core::mem::MaybeUninit;
-
 extern crate alloc;
 
 use defmt as _;
@@ -33,12 +31,10 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
-    config::WatchdogConfig,
     cpu_control::{CpuControl, Stack},
     dma::*,
-    gpio::{AnyPin, Input, Io, Level, Output, Pull},
+    gpio::{Input, Io, Level, Output, Pull},
     interrupt::{self, software::SoftwareInterruptControl},
-    peripherals::Peripherals,
     prelude::*,
     rng::Rng,
     spi::{master::Spi, SpiMode},
