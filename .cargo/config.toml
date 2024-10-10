@@ -3,8 +3,9 @@ runner = "espflash flash --monitor -L defmt --partition-table partitions.csv"
 # runner = "probe-rs run --chip esp32s3 --idf-partition-table partitions.csv"
 
 [env]
-ESP_LOGLEVEL = "INFO"
+ESP_LOG = "INFO"
 DEFMT_LOG = "info"
+ESP_HAL_PLACE_SPI_DRIVER_IN_RAM = "true"
 
 [build]
 rustflags = [

@@ -33,17 +33,16 @@ use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl,
+    config::WatchdogConfig,
     cpu_control::{CpuControl, Stack},
     dma::*,
-    gpio::{AnyInput, AnyOutput, Io, Level, Output, Pull},
-    interrupt,
+    gpio::{AnyPin, Input, Io, Level, Output, Pull},
+    interrupt::{self, software::SoftwareInterruptControl},
     peripherals::Peripherals,
     prelude::*,
     rng::Rng,
     spi::{master::Spi, SpiMode},
-    system::SystemControl,
-    timer::{timg::TimerGroup, ErasedTimer, OneShotTimer},
+    timer::{timg::TimerGroup, AnyTimer, OneShotTimer},
     Async,
 };
 use esp_wifi::{self, EspWifiInitFor};
@@ -51,33 +50,23 @@ use esp_wifi::{self, EspWifiInitFor};
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
 
-// Global allocator
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
-
-fn init_heap() {
-    const HEAP_SIZE: usize = 64 * 1024;
-    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
-
-    unsafe {
-        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
-    }
-}
-
 #[main]
 async fn main(spawner: Spawner) {
-    let peripherals = Peripherals::take();
-    let system = SystemControl::new(peripherals.SYSTEM);
-    let clocks = ClockControl::max(system.clock_control).freeze();
+    let mut hal_config = esp_hal::Config::default();
+    hal_config.cpu_clock = esp_hal::clock::CpuClock::Clock240MHz;
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
-    let timer0: ErasedTimer = timg0.timer0.into();
-    let timer1: ErasedTimer = timg0.timer1.into();
-    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, ErasedTimer>; 2]> = StaticCell::new();
+    let peripherals = esp_hal::init(hal_config);
+
+    let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let timer0: AnyTimer = timg0.timer0.into();
+    let timer1: AnyTimer = timg0.timer1.into();
+    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 2]> = StaticCell::new();
     let timers = TIMERS_STATIC.init([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
-    esp_hal_embassy::init(&clocks, timers);
+    esp_hal_embassy::init(timers);
 
-    init_heap();
+    esp_alloc::heap_allocator!(96 * 1024);
 
     let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
         CriticalSectionRawMutex,
@@ -127,17 +116,16 @@ async fn main(spawner: Spawner) {
     Timer::after_secs(2).await;
 
     // --- WIFI ---
-    let timg1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    let timg1 = TimerGroup::new(peripherals.TIMG1);
     // let timg1 = esp_hal::timer::timg::TimerGroup::new(peripherals.TIMG1, &clocks, None);
     // let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
 
     let wifi = peripherals.WIFI;
-    let init = esp_wifi::initialize(
+    let init = esp_wifi::init(
         EspWifiInitFor::Wifi,
         timg1.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
-        &clocks,
     )
     .unwrap();
 
@@ -149,8 +137,7 @@ async fn main(spawner: Spawner) {
     let bms_sda = io.pins.gpio1;
     let bms_scl = io.pins.gpio2;
 
-    let mut bms_i2c =
-        esp_hal::i2c::I2C::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz(), &clocks);
+    let mut bms_i2c = esp_hal::i2c::I2C::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz());
     let mut reg07 = [0u8; 1];
 
     // Register 0x07, 1 byte
@@ -173,7 +160,6 @@ async fn main(spawner: Spawner) {
         display_sda,
         display_scl,
         400.kHz(),
-        &clocks,
     )));
 
     // Scan I2C bus
@@ -185,7 +171,7 @@ async fn main(spawner: Spawner) {
     let dma = Dma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
-    let spi = Spi::new(peripherals.SPI2, 24.MHz(), SpiMode::Mode0, &clocks)
+    let spi = Spi::new(peripherals.SPI2, 24.MHz(), SpiMode::Mode0)
         .with_sck(sclk)
         .with_miso(miso)
         .with_mosi(mosi);
@@ -193,7 +179,7 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(inertial::imu_task(
             config_store.clone(),
-            AnyOutput::new(imu_cs, Level::High),
+            Output::new(imu_cs, Level::High),
             dma_channel,
             spi,
         ))
@@ -204,7 +190,7 @@ async fn main(spawner: Spawner) {
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 = EXECUTOR_CORE1.init(InterruptExecutor::new(
-            system.software_interrupt_control.software_interrupt2,
+            sw_ints.software_interrupt2,
         ));
         let spawner = executor_core1.start(interrupt::Priority::Priority2);
 
@@ -216,7 +202,7 @@ async fn main(spawner: Spawner) {
         let dw_mosi = io.pins.gpio35;
         let dw_miso = io.pins.gpio37;
 
-        let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0, &clocks)
+        let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0)
             .with_sck(dw_sclk)
             .with_miso(dw_miso)
             .with_mosi(dw_mosi);
@@ -228,9 +214,9 @@ async fn main(spawner: Spawner) {
             .spawn(ranging::symmetric_twr_tag_task(
                 config_store_,
                 spi,
-                AnyOutput::new(dw_cs, Level::High),
-                AnyOutput::new(dw_rst, Level::High),
-                AnyInput::new(dw_irq, Pull::Up),
+                Output::new(dw_cs, Level::High),
+                Output::new(dw_rst, Level::High),
+                Input::new(dw_irq, Pull::Up),
                 dma_channel,
             ))
             .unwrap();
@@ -248,7 +234,7 @@ async fn main(spawner: Spawner) {
 
     let led = io.pins.gpio5;
     spawner
-        .spawn(indicator::control_led(AnyOutput::new(led, Level::Low)))
+        .spawn(indicator::control_led(Output::new(led, Level::Low)))
         .ok();
 
     // Start the interactive console

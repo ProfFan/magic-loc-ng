@@ -15,8 +15,8 @@ use embassy_time::{Duration, Timer};
 use embedded_hal::delay::DelayNs;
 use esp_hal::macros::ram;
 use esp_hal::{
-    dma::ChannelCreator1,
-    gpio::{AnyInput, AnyOutput},
+    dma::ChannelCreator,
+    gpio::{AnyPin, Input, Output},
     peripherals::SPI3,
     spi::{master::Spi, FullDuplexMode},
 };
@@ -69,10 +69,10 @@ impl Default for UwbConfig {
 pub async fn symmetric_twr_tag_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     bus: Spi<'static, SPI3, FullDuplexMode>,
-    cs_gpio: AnyOutput<'static>,
-    mut rst_gpio: AnyOutput<'static>,
-    mut int_gpio: AnyInput<'static>,
-    dma_channel: ChannelCreator1,
+    cs_gpio: Output<'static>,
+    mut rst_gpio: Output<'static>,
+    mut int_gpio: Input<'static>,
+    dma_channel: ChannelCreator<1>,
 ) -> ! {
     defmt::info!("Starting TWR Tag Task!");
 
