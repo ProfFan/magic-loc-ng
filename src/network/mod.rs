@@ -41,7 +41,7 @@ pub async fn wifi_test_task(
     {
         defmt::error!("Failed to set tx rate");
     } else {
-        defmt::info!("Set tx rate to MCS7 SGI");
+        defmt::info!("Set tx rate to MCS7 SGI"); // MCS7 Short GI with 40MHz = 150 Mbps
     }
 
     // Set bandwidth

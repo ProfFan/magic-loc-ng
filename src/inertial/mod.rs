@@ -78,7 +78,7 @@ pub async fn imu_task(
         let mut fifo_buffer = [0u32; 16];
         let buffered_num = icm.read_fifo(&mut fifo_buffer).await.unwrap();
 
-        defmt::debug!("In-FIFO: {} packets", buffered_num);
+        defmt::trace!("In-FIFO: {} packets", buffered_num);
 
         let num_read = if buffered_num > 3 {
             defmt::error!("FIFO is not being read fast enough");
@@ -97,7 +97,7 @@ pub async fn imu_task(
 
             defmt::trace!("Packet: {:?}", parsed_header);
 
-            defmt::debug!(
+            defmt::trace!(
                 "[{}], Accel: {}, {}, {}, Gyro: {}, {}, {}, T={}",
                 packet.timestamp(),
                 packet.accel_data_x(),

@@ -1,5 +1,3 @@
-use core::convert::Infallible;
-
 use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
 use embassy_executor::task;
@@ -74,7 +72,7 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
         let mut command_buffer = heapless::Vec::<u8, MAX_BUFFER_SIZE>::new();
 
         let echo_back = |buf: &[u8], new_line: bool| {
-            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"\x1b[2K\r");
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"\x1b[2K\r"); // Clear the line
             let _ = esp_fast_serial::write_to_usb_serial_buffer(PROMPT);
             let _ = esp_fast_serial::write_to_usb_serial_buffer(buf);
             if new_line {
