@@ -1,4 +1,4 @@
-use core::cell::RefCell;
+use core::cell::{OnceCell, RefCell};
 
 use alloc::sync::Arc;
 use dw3000_ng::{
@@ -6,22 +6,32 @@ use dw3000_ng::{
     configs::{StsLen, StsMode},
     hl::ConfigGPIOs,
 };
-use embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice;
+use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_sync::{
-    blocking_mutex::{raw::CriticalSectionRawMutex, NoopMutex},
+    blocking_mutex::{
+        raw::{CriticalSectionRawMutex, NoopRawMutex},
+        NoopMutex,
+    },
     mutex::Mutex,
 };
 use embassy_time::{Duration, Timer};
 use embedded_hal::delay::DelayNs;
-use esp_hal::macros::ram;
 use esp_hal::{
     dma::ChannelCreator,
     gpio::{AnyPin, Input, Output},
     peripherals::SPI3,
     spi::{master::Spi, FullDuplexMode},
 };
+use esp_hal::{
+    dma::{DmaPriority, DmaRxBuf, DmaTxBuf},
+    dma_buffers,
+    macros::ram,
+};
 
-use crate::{configuration::ConfigurationStore, utils::nonblocking_wait};
+use crate::{
+    configuration::ConfigurationStore,
+    utils::{nonblocking_wait, nonblocking_wait_async},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
 #[repr(C)]
@@ -47,26 +57,12 @@ impl Default for UwbConfig {
     }
 }
 
-/// Task for the UWB Tag
+/// Task for the UWB Driver
 ///
-/// This task runs the Tag side state machine
-///
-/// Basic operation is as follows:
-///
-/// # As Initiator
-///
-/// 1. Send the Poll packet
-/// 2. Wait for the Response packet
-/// 3. Send the Final packet
-///
-/// # As Responder
-///
-/// 1. Wait for the Poll packet
-/// 2. Send the Response packet
-/// 3. Wait for the Final packet
+/// This task receives from the TX/RX queue and communicates with the DW3000
 #[embassy_executor::task(pool_size = 1)]
 #[ram]
-pub async fn symmetric_twr_tag_task(
+pub async fn uwb_driver_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     bus: Spi<'static, SPI3, FullDuplexMode>,
     cs_gpio: Output<'static>,
@@ -74,7 +70,7 @@ pub async fn symmetric_twr_tag_task(
     mut int_gpio: Input<'static>,
     dma_channel: ChannelCreator<1>,
 ) -> ! {
-    defmt::info!("Starting TWR Tag Task!");
+    defmt::info!("Starting UWB Driver Task!");
 
     config_store
         .lock()
@@ -83,8 +79,18 @@ pub async fn symmetric_twr_tag_task(
         .register::<UwbConfig>(b"UWB_CONF")
         .unwrap();
 
-    let bus = NoopMutex::new(RefCell::new(bus));
-    let spidev = SpiDevice::new(&bus, cs_gpio);
+    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
+    let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+
+    let bus = bus
+        .with_dma(dma_channel.configure_for_async(false, DmaPriority::Priority0))
+        .with_buffers(dma_rx_buf, dma_tx_buf);
+
+    let spi_bus = OnceCell::<Mutex<NoopRawMutex, _>>::new();
+    let _ = spi_bus.set(Mutex::new(bus));
+
+    let spidev = SpiDevice::new(&spi_bus.get().unwrap(), cs_gpio);
 
     let mut dwm_config = dw3000_ng::Config::default();
     dwm_config.bitrate = dw3000_ng::configs::BitRate::Kbps6800;
@@ -103,7 +109,7 @@ pub async fn symmetric_twr_tag_task(
 
     Timer::after(Duration::from_millis(200)).await;
 
-    let dw3000 = dw3000_ng::DW3000::new(spidev).init();
+    let dw3000 = dw3000_ng::DW3000::new(spidev).init().await;
     if let Err(e) = dw3000 {
         defmt::error!("DW3000 failed init: {}", e);
         core::future::pending::<()>().await;
@@ -112,49 +118,70 @@ pub async fn symmetric_twr_tag_task(
 
     let mut dw3000 = dw3000
         .unwrap()
-        .config_async(dwm_config, |d: u32| Timer::after_micros(d as u64))
+        .config(dwm_config, embassy_time::Delay)
         // .config(dwm_config, |d: u32| embassy_time::Delay.delay_us(d))
         .await
         .expect("Failed config.");
 
-    dw3000.gpio_config(ConfigGPIOs::enable_led()).unwrap();
+    dw3000.gpio_config(ConfigGPIOs::enable_led()).await.unwrap();
     dw3000
         .ll()
         .led_ctrl()
         .modify(|_, w| w.blink_tim(0x2))
+        .await
         .unwrap();
 
     // Enable Super Deterministic Code (SDC)
-    dw3000.ll().sys_cfg().modify(|_, w| w.cp_sdc(0x1)).unwrap();
+    dw3000
+        .ll()
+        .sys_cfg()
+        .modify(|_, w| w.cp_sdc(0x1))
+        .await
+        .unwrap();
 
     Timer::after(Duration::from_millis(200)).await;
 
     // Disable SPIRDY interrupt
-    dw3000.disable_interrupts().unwrap();
-    dw3000.enable_tx_interrupts().unwrap();
-    dw3000.enable_rx_interrupts().unwrap();
+    dw3000.disable_interrupts().await.unwrap();
+    dw3000.enable_tx_interrupts().await.unwrap();
+    dw3000.enable_rx_interrupts().await.unwrap();
 
     // Read DW3000 Device ID
-    let dev_id = dw3000.ll().dev_id().read().unwrap();
+    let dev_id = dw3000.ll().dev_id().read().await.unwrap();
 
     if dev_id.model() != 0x03 {
         defmt::error!("Invalid DW3000 model: {:#x}", dev_id.model());
         panic!();
     }
 
-    dw3000.ll().rx_fwto().write(|w| w.value(1000000)).unwrap();
-    dw3000.ll().sys_cfg().modify(|_, w| w.rxwtoe(1)).unwrap();
-    dw3000.ll().sys_status().modify(|_, w| w.rxfto(1)).unwrap();
+    dw3000
+        .ll()
+        .rx_fwto()
+        .write(|w| w.value(1000000))
+        .await
+        .unwrap();
+    dw3000
+        .ll()
+        .sys_cfg()
+        .modify(|_, w| w.rxwtoe(1))
+        .await
+        .unwrap();
+    dw3000
+        .ll()
+        .sys_status()
+        .modify(|_, w| w.rxfto(1))
+        .await
+        .unwrap();
 
     loop {
-        let mut rxing = dw3000.receive(dwm_config).unwrap();
+        let mut rxing = dw3000.receive(dwm_config).await.unwrap();
 
         // wait on the RX
-        let result = nonblocking_wait(
-            || -> Result<(), nb::Error<_>> {
+        let result = nonblocking_wait_async(
+            async || -> Result<(), nb::Error<_>> {
                 defmt::trace!("Waiting for packet...");
                 let mut buffer = [0u8; 256];
-                let status = rxing.r_wait_buf(&mut buffer);
+                let status = rxing.r_wait_buf(&mut buffer).await;
 
                 if status.is_err() {
                     return status.map(|_| ());
@@ -172,7 +199,7 @@ pub async fn symmetric_twr_tag_task(
             defmt::error!("Failed to receive packet, reason: {}", result.unwrap_err());
         }
 
-        dw3000 = rxing.finish_receiving().unwrap();
+        dw3000 = rxing.finish_receiving().await.unwrap();
 
         Timer::after_secs(1).await;
     }

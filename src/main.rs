@@ -4,6 +4,7 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_closure)]
+#![feature(async_fn_traits)]
 #![feature(let_chains)]
 
 mod configuration;
@@ -14,6 +15,8 @@ mod inertial;
 mod network;
 mod ranging;
 mod utils;
+
+use core::cell::OnceCell;
 
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
@@ -172,12 +175,31 @@ async fn main(spawner: Spawner) {
         .with_miso(miso)
         .with_mosi(mosi);
 
+    let imu_pubsub_ = embassy_sync::pubsub::PubSubChannel::<
+        CriticalSectionRawMutex,
+        icm426xx::fifo::FifoPacket4,
+        3,
+        1,
+        1,
+    >::new();
+    static IMU_PUBSUB: StaticCell<
+        embassy_sync::pubsub::PubSubChannel<
+            CriticalSectionRawMutex,
+            icm426xx::fifo::FifoPacket4,
+            3,
+            1,
+            1,
+        >,
+    > = StaticCell::new();
+    let imu_pubsub = IMU_PUBSUB.init(imu_pubsub_);
+
     spawner
         .spawn(inertial::imu_task(
             config_store.clone(),
             Output::new(imu_cs, Level::High),
             dma_channel,
             spi,
+            imu_pubsub.dyn_publisher().unwrap(),
         ))
         .unwrap();
 
@@ -206,7 +228,7 @@ async fn main(spawner: Spawner) {
 
         // Start the ranging task
         spawner
-            .spawn(ranging::symmetric_twr_tag_task(
+            .spawn(ranging::uwb_driver_task(
                 config_store_,
                 spi,
                 Output::new(dw_cs, Level::High),

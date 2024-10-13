@@ -1,4 +1,4 @@
-use core::future::Future;
+use core::{future::Future, ops::AsyncFnMut};
 
 use embassy_time::Instant;
 use nb;
@@ -25,6 +25,26 @@ pub async fn nonblocking_wait<T, E>(
 ) -> Result<T, E> {
     loop {
         let v = f();
+
+        match v {
+            Ok(t) => return Ok(t),
+            Err(nb::Error::Other(e)) => return Err(e),
+            Err(nb::Error::WouldBlock) => {
+                defmt::trace!("Waiting for high...");
+                int_gpio.wait_for_high().await.unwrap();
+                continue;
+            }
+        }
+    }
+}
+
+/// Async version of `nonblocking_wait`
+pub async fn nonblocking_wait_async<T, E>(
+    mut fut: impl AsyncFnMut() -> Result<T, nb::Error<E>>,
+    int_gpio: &mut impl embedded_hal_async::digital::Wait,
+) -> Result<T, E> {
+    loop {
+        let v = fut().await;
 
         match v {
             Ok(t) => return Ok(t),
