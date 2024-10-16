@@ -16,14 +16,11 @@ mod network;
 mod ranging;
 mod utils;
 
-use core::cell::OnceCell;
-
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     mutex::Mutex,
 };
-use esp_fast_serial;
-use esp_hal_embassy::InterruptExecutor;
+use esp_hal_embassy::{Executor, InterruptExecutor};
 use static_cell::StaticCell;
 
 extern crate alloc;
@@ -65,7 +62,7 @@ async fn main(spawner: Spawner) {
     let timers = TIMERS_STATIC.init([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
     esp_hal_embassy::init(timers);
 
-    esp_alloc::heap_allocator!(96 * 1024);
+    esp_alloc::heap_allocator!(128 * 1024);
 
     let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
         CriticalSectionRawMutex,
@@ -193,13 +190,17 @@ async fn main(spawner: Spawner) {
     > = StaticCell::new();
     let imu_pubsub = IMU_PUBSUB.init(imu_pubsub_);
 
-    spawner
+    static EXECUTOR_L2: StaticCell<InterruptExecutor<1>> = StaticCell::new();
+    let executor_l2 = EXECUTOR_L2.init(InterruptExecutor::new(sw_ints.software_interrupt1));
+    let spawner_l2 = executor_l2.start(interrupt::Priority::Priority2);
+
+    spawner_l2
         .spawn(inertial::imu_task(
             config_store.clone(),
             Output::new(imu_cs, Level::High),
             dma_channel,
             spi,
-            imu_pubsub.dyn_publisher().unwrap(),
+            imu_pubsub.publisher().unwrap(),
         ))
         .unwrap();
 
@@ -237,7 +238,10 @@ async fn main(spawner: Spawner) {
                 dma_channel,
             ))
             .unwrap();
-        loop {}
+
+        static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+        let executor = EXECUTOR.init(Executor::new());
+        executor.run(|_| {});
     };
 
     defmt::info!("Starting core 1");

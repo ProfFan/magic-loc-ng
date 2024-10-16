@@ -1,6 +1,6 @@
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
+use esp_hal::macros::ram;
 use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
-use esp_wifi_sys;
 
 use embassy_executor::task;
 use ieee80211::{
@@ -13,6 +13,7 @@ use scroll::{Pread, Pwrite};
 extern crate alloc;
 
 #[task]
+#[ram]
 pub async fn wifi_test_task(
     wifi_init: EspWifiInitialization,
     wifi_dev: esp_hal::peripherals::WIFI,
@@ -79,11 +80,12 @@ pub async fn wifi_test_task(
     let transmitter_addr = mac_parser::MACAddress::new([0xe8, 0x65, 0xd4, 0xcb, 0x74, 0x19]);
     let my_mac = mac_parser::MACAddress::new([0x74, 0x19, 0xff, 0xfc, 0xff, 0xff]);
 
-    // let super_long_payload = [0xFEu8; 20];
+    let super_long_payload = [0xFEu8; 400];
     let frame = DataFrameBuilder::new()
         .to_and_from_ds()
         .category_data()
-        .payload(b"Hello, world!".as_slice())
+        // .payload(b"Hello, world!".as_slice())
+        .payload(super_long_payload.as_slice())
         .destination_address(mac_parser::BROADCAST)
         .source_address(my_mac)
         .transmitter_address(transmitter_addr)
@@ -104,8 +106,11 @@ pub async fn wifi_test_task(
     defmt::info!("Frame buf: {:x}", frame_buf);
 
     loop {
-        sniffer.send_raw_frame(false, &frame_buf, true).unwrap();
+        let current_time = Instant::now();
+        sniffer.send_raw_frame(false, frame_buf, true).unwrap();
+        let elapsed = current_time.elapsed();
 
+        defmt::info!("TX time: {:?} us", elapsed.as_micros());
         Timer::after_secs(3).await;
     }
 }

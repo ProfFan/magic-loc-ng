@@ -3,7 +3,7 @@ use core::cell::OnceCell;
 use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
-use embassy_sync::pubsub::DynPublisher;
+use embassy_sync::pubsub::Publisher;
 use embassy_time::{Delay, Duration, Ticker, Timer};
 use esp_hal::dma::{DmaPriority, DmaRxBuf, DmaTxBuf};
 use esp_hal::gpio::Output;
@@ -20,7 +20,7 @@ pub async fn imu_task(
     mut cs_output: Output<'static>,
     dma_channel: dma::ChannelCreator<0>,
     spi: Spi<'static, SPI2, FullDuplexMode>,
-    imu_pub: DynPublisher<'static, icm426xx::fifo::FifoPacket4>,
+    imu_pub: Publisher<'static, CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3, 1, 1>,
 ) {
     defmt::info!("Starting IMU task");
 

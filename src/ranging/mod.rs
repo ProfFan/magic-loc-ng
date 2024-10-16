@@ -1,4 +1,4 @@
-use core::cell::{OnceCell, RefCell};
+use core::cell::OnceCell;
 
 use alloc::sync::Arc;
 use dw3000_ng::{
@@ -8,17 +8,13 @@ use dw3000_ng::{
 };
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_sync::{
-    blocking_mutex::{
-        raw::{CriticalSectionRawMutex, NoopRawMutex},
-        NoopMutex,
-    },
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     mutex::Mutex,
 };
 use embassy_time::{Duration, Timer};
-use embedded_hal::delay::DelayNs;
 use esp_hal::{
     dma::ChannelCreator,
-    gpio::{AnyPin, Input, Output},
+    gpio::{Input, Output},
     peripherals::SPI3,
     spi::{master::Spi, FullDuplexMode},
 };
@@ -28,10 +24,7 @@ use esp_hal::{
     macros::ram,
 };
 
-use crate::{
-    configuration::ConfigurationStore,
-    utils::{nonblocking_wait, nonblocking_wait_async},
-};
+use crate::{configuration::ConfigurationStore, utils::nonblocking_wait_async};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
 #[repr(C)]
@@ -52,7 +45,7 @@ impl Default for UwbConfig {
             short_address: 0,
             long_address: [0; 6],
             pan_id: 0,
-            channel: 0,
+            channel: 9,
         }
     }
 }
@@ -90,13 +83,15 @@ pub async fn uwb_driver_task(
     let spi_bus = OnceCell::<Mutex<NoopRawMutex, _>>::new();
     let _ = spi_bus.set(Mutex::new(bus));
 
-    let spidev = SpiDevice::new(&spi_bus.get().unwrap(), cs_gpio);
+    let spidev = SpiDevice::new(spi_bus.get().unwrap(), cs_gpio);
 
-    let mut dwm_config = dw3000_ng::Config::default();
-    dwm_config.bitrate = dw3000_ng::configs::BitRate::Kbps6800;
-    dwm_config.sts_len = StsLen::StsLen128;
-    dwm_config.sts_mode = StsMode::StsMode1;
-    dwm_config.pdoa_mode = dw3000_ng::configs::PdoaMode::Mode3;
+    let dwm_config = dw3000_ng::Config {
+        bitrate: dw3000_ng::configs::BitRate::Kbps6800,
+        sts_len: StsLen::StsLen128,
+        sts_mode: StsMode::StsMode1,
+        pdoa_mode: dw3000_ng::configs::PdoaMode::Mode3,
+        ..Default::default()
+    };
 
     // Reset
     rst_gpio.set_low();
@@ -113,7 +108,7 @@ pub async fn uwb_driver_task(
     if let Err(e) = dw3000 {
         defmt::error!("DW3000 failed init: {}", e);
         core::future::pending::<()>().await;
-        loop {}
+        unreachable!()
     }
 
     let mut dw3000 = dw3000
@@ -194,9 +189,9 @@ pub async fn uwb_driver_task(
         .await;
 
         if let Ok(()) = result {
-            defmt::info!("Received packet!");
+            defmt::debug!("Received packet!");
         } else {
-            defmt::error!("Failed to receive packet, reason: {}", result.unwrap_err());
+            defmt::debug!("Failed to receive packet, reason: {}", result.unwrap_err());
         }
 
         dw3000 = rxing.finish_receiving().await.unwrap();

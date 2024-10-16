@@ -23,6 +23,7 @@ const PAGE_COUNT: usize = 16;
 #[derive(Debug)]
 pub enum ConfigurationError {
     KeyTypeMismatch,
+    #[allow(dead_code)]
     StorageError(sequential_storage::Error<FlashStorageError>),
 }
 
@@ -92,7 +93,7 @@ impl ConfigurationStore {
         key: &KeyType,
     ) -> Result<Option<T>, ConfigurationError> {
         let type_id = self.registry.get(key);
-        if type_id.is_some() && type_id.unwrap() != &TypeId::of::<T>() {
+        if type_id.is_some() && type_id.unwrap().type_id != TypeId::of::<T>() {
             return Err(ConfigurationError::KeyTypeMismatch);
         }
 
@@ -125,7 +126,7 @@ impl ConfigurationStore {
         let type_id = TypeId::of::<T>();
         let key_type = self.registry.get(key);
 
-        if key_type.is_some() && key_type.unwrap() != &type_id {
+        if key_type.is_some() && key_type.unwrap().type_id != type_id {
             return Err(ConfigurationError::KeyTypeMismatch);
         }
 

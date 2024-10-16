@@ -4,8 +4,8 @@ use crate::configuration::ConfigurationStore;
 
 use super::Token;
 use alloc::sync::Arc;
+use bstr::ByteSlice;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-use esp_fast_serial;
 
 extern crate alloc;
 
@@ -17,6 +17,21 @@ pub async fn conf<'a>(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     args: &[Token<'a>],
 ) -> Result<(), ()> {
+    if args.len() < 2 {
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Invalid number of arguments\n");
+        return Err(());
+    }
+
+    if args[1] == Token::String("list") {
+        let registry = &config_store.lock().await.registry;
+        for (key, value) in registry.iter() {
+            let out = alloc::format!("{:?} = {:?}\n", key.as_bstr(), value.name);
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(out.as_bytes());
+        }
+
+        return Ok(());
+    }
+
     if args.len() < 3 {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Invalid number of arguments\n");
         return Err(());
@@ -65,7 +80,7 @@ pub async fn conf<'a>(
             return Err(());
         };
 
-        if type_id == TypeId::of::<u8>() {
+        if type_id.type_id == TypeId::of::<u8>() {
             let value = value.parse::<u8>().unwrap();
             let result = config_store.lock().await.set::<u8>(&key, value).await;
             match result {
@@ -79,7 +94,7 @@ pub async fn conf<'a>(
             }
         }
 
-        if type_id == TypeId::of::<u32>() {
+        if type_id.type_id == TypeId::of::<u32>() {
             let value = value.parse::<u32>().unwrap();
             let result = config_store.lock().await.set::<u32>(&key, value).await;
             match result {
@@ -97,14 +112,14 @@ pub async fn conf<'a>(
     if args[1] == Token::String("get") {
         let mut buffer = [0u8; 128];
 
-        let type_id = config_store.lock().await.registry.get(&key).cloned();
+        let entry = config_store.lock().await.registry.get(&key).cloned();
 
-        if type_id.is_none() {
+        if entry.is_none() {
             let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Config type not registered\n");
             return Err(());
         }
 
-        if type_id.unwrap() == TypeId::of::<u8>() {
+        if entry.unwrap().type_id == TypeId::of::<u8>() {
             let value = config_store.lock().await.get::<u8>(&mut buffer, &key).await;
 
             match value {
@@ -117,13 +132,13 @@ pub async fn conf<'a>(
                         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Value not found\n");
                     }
                 },
-                Err(e) => {
+                Err(_) => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
                 }
             }
         }
 
-        if type_id.unwrap() == TypeId::of::<u32>() {
+        if entry.unwrap().type_id == TypeId::of::<u32>() {
             let value = config_store
                 .lock()
                 .await
@@ -140,12 +155,20 @@ pub async fn conf<'a>(
                         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Value not found\n");
                     }
                 },
-                Err(e) => {
+                Err(_) => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
                 }
             }
         }
     }
 
+    Ok(())
+}
+
+pub async fn free<'a>(_: &[Token<'a>]) -> Result<(), ()> {
+    let free_mem = esp_alloc::HEAP.free();
+    let _ = esp_fast_serial::write_to_usb_serial_buffer(
+        alloc::format!("Free memory: {} bytes\n", free_mem).as_bytes(),
+    );
     Ok(())
 }

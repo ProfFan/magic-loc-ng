@@ -7,8 +7,14 @@
 use core::any::TypeId;
 use heapless::FnvIndexMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entry {
+    pub type_id: TypeId,
+    pub name: &'static str,
+}
+
 pub struct Registry {
-    entries: FnvIndexMap<super::KeyType, TypeId, 128>,
+    entries: FnvIndexMap<super::KeyType, Entry, 128>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
@@ -29,12 +35,22 @@ impl Registry {
             return Err(Error::KeyAlreadyExists);
         }
         self.entries
-            .insert(*key, TypeId::of::<T>())
+            .insert(
+                *key,
+                Entry {
+                    type_id: TypeId::of::<T>(),
+                    name: core::any::type_name::<T>(),
+                },
+            )
             .map_err(|_| Error::RegistryFull)?;
         Ok(())
     }
 
-    pub fn get(&self, key: &super::KeyType) -> Option<&TypeId> {
+    pub fn get(&self, key: &super::KeyType) -> Option<&Entry> {
         self.entries.get(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&super::KeyType, &Entry)> {
+        self.entries.iter()
     }
 }

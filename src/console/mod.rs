@@ -23,7 +23,7 @@ pub fn parse_arguments<'a>(command: &'a str) -> heapless::Vec<Token<'a>, 16> {
     let mut subtokens = heapless::Vec::<&str, 32>::new();
     {
         let mut last = 0;
-        for (index, matched) in command.match_indices(|c: char| c == ' ' || c == '\"') {
+        for (index, matched) in command.match_indices([' ', '\"']) {
             if last != index {
                 let _ = subtokens.push(&command[last..index]);
             }
@@ -77,11 +77,12 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
             let _ = esp_fast_serial::write_to_usb_serial_buffer(buf);
             if new_line {
                 let _ = esp_fast_serial::write_to_usb_serial_buffer(b"\n\r");
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(PROMPT);
             }
         };
 
         loop {
+            echo_back(&command_buffer, false);
+
             let mut buf = [0u8; 1];
             let read = serial_in.read(&mut buf).await;
             if read == 0 {
@@ -93,8 +94,6 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
                 if not_full.is_err() {
                     command_buffer.clear();
                 }
-
-                echo_back(command_buffer.as_slice(), false);
             } else {
                 echo_back(command_buffer.as_slice(), true);
 
@@ -110,7 +109,7 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
 
         defmt::debug!("Tokens: {:?}", tokens);
 
-        if tokens.len() == 0 {
+        if tokens.is_empty() {
             continue;
         }
 
@@ -118,6 +117,9 @@ pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, Configurat
             match app {
                 "conf" => {
                     let _ = apps::conf(config_store.clone(), &tokens).await;
+                }
+                "free" => {
+                    let _ = apps::free(&tokens).await;
                 }
                 _ => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");

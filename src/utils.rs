@@ -4,6 +4,7 @@ use embassy_time::Instant;
 use nb;
 
 #[inline]
+#[allow(dead_code)]
 pub async fn time_operation<T>(f: impl Future<Output = T>) -> T {
     let start = Instant::now();
     let r = f.await;
@@ -19,6 +20,7 @@ pub async fn time_operation<T>(f: impl Future<Output = T>) -> T {
 /// When `f` returns `nb::Error::WouldBlock`, this function will wait for
 /// the GPIO output to go high, and then call `f` again.
 #[inline]
+#[allow(dead_code)]
 pub async fn nonblocking_wait<T, E>(
     mut f: impl FnMut() -> Result<T, nb::Error<E>>,
     int_gpio: &mut impl embedded_hal_async::digital::Wait,
