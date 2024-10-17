@@ -107,6 +107,20 @@ pub async fn conf<'a>(
                 }
             }
         }
+
+        if type_id.type_id == TypeId::of::<u64>() {
+            let value = value.parse::<u64>().unwrap();
+            let result = config_store.lock().await.set::<u64>(&key, value).await;
+            match result {
+                Ok(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Config set\n");
+                }
+                Err(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
+                    return Err(());
+                }
+            }
+        }
     }
 
     if args[1] == Token::String("get") {

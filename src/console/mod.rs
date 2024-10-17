@@ -1,6 +1,6 @@
 use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
-use embassy_executor::task;
+use embassy_executor::{task, Spawner};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 
@@ -63,7 +63,10 @@ pub fn parse_arguments<'a>(command: &'a str) -> heapless::Vec<Token<'a>, 16> {
 }
 
 #[task]
-pub async fn console(config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>) {
+pub async fn console(
+    spawner: Spawner,
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
+) {
     let serial_in = esp_fast_serial::reader_take();
 
     const PROMPT: &[u8] = b"(ml)> ";

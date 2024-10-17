@@ -125,7 +125,9 @@ async fn main(spawner: Spawner) {
     )
     .unwrap();
 
-    spawner.spawn(network::wifi_test_task(init, wifi)).unwrap();
+    spawner
+        .spawn(network::wifi_test_task(config_store.clone(), init, wifi))
+        .unwrap();
 
     Timer::after_secs(1).await;
 
@@ -260,7 +262,7 @@ async fn main(spawner: Spawner) {
 
     // Start the interactive console
     spawner
-        .spawn(console::console(config_store.clone()))
+        .spawn(console::console(spawner, config_store.clone()))
         .unwrap();
 
     // A never-ending heartbeat

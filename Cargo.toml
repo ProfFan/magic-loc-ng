@@ -38,7 +38,7 @@ esp-wifi = { version = "0.10.*", default-features = false, features = [
     "esp-now",
     "async",
     "sniffer",
-    "ps-min-modem",
+    # "ps-min-modem",
     "wifi",
     "defmt",
     "phy-enable-usb",

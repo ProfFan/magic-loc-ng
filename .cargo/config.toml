@@ -6,6 +6,11 @@ runner = "espflash flash --monitor -L defmt --partition-table partitions.csv"
 ESP_LOG = "INFO"
 DEFMT_LOG = "info"
 ESP_HAL_PLACE_SPI_DRIVER_IN_RAM = "true"
+ESP_WIFI_TICK_RATE_HZ = "1000"
+ESP_WIFI_AMPDU_TX_ENABLE = "false"
+ESP_WIFI_AMPDU_RX_ENABLE = "false"
+ESP_WIFI_TX_QUEUE_SIZE = "5"
+ESP_WIFI_RX_QUEUE_SIZE = "10"
 
 [build]
 rustflags = [

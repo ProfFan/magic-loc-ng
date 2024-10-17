@@ -1,3 +1,7 @@
+use core::sync::atomic::{AtomicI32, Ordering};
+
+use alloc::sync::Arc;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Instant, Timer};
 use esp_hal::macros::ram;
 use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
@@ -10,11 +14,14 @@ use ieee80211::{
 };
 use scroll::{Pread, Pwrite};
 
+use crate::configuration::ConfigurationStore;
+
 extern crate alloc;
 
 #[task]
 #[ram]
 pub async fn wifi_test_task(
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     wifi_init: EspWifiInitialization,
     wifi_dev: esp_hal::peripherals::WIFI,
 ) {
@@ -36,13 +43,13 @@ pub async fn wifi_test_task(
     if unsafe {
         esp_wifi_sys::include::esp_wifi_config_80211_tx_rate(
             esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
-            esp_wifi_sys::include::wifi_phy_rate_t_WIFI_PHY_RATE_MCS7_SGI,
+            esp_wifi_sys::include::wifi_phy_rate_t_WIFI_PHY_RATE_MCS4_LGI,
         )
     } != esp_wifi_sys::include::ESP_OK as i32
     {
         defmt::error!("Failed to set tx rate");
     } else {
-        defmt::info!("Set tx rate to MCS7 SGI"); // MCS7 Short GI with 40MHz = 150 Mbps
+        defmt::info!("Set tx rate to MCS4 LGI"); // MCS4 Long GI with 40MHz = 81 Mbps
     }
 
     // Set bandwidth
@@ -60,6 +67,29 @@ pub async fn wifi_test_task(
 
     let mut sniffer = wifi_ctl.take_sniffer().unwrap();
 
+    // Register config in store
+    config_store
+        .lock()
+        .await
+        .registry
+        .register::<u64>(b"W_TX_DLY")
+        .unwrap();
+
+    let mut tx_delay_us = config_store
+        .lock()
+        .await
+        .get::<u64>(&mut [0b0; 20], b"W_TX_DLY")
+        .await
+        .unwrap()
+        .unwrap_or(30000);
+
+    if tx_delay_us < 800 {
+        defmt::warn!("TX delay is less than 800 us, setting to 800 us");
+        tx_delay_us = 800;
+    }
+
+    static RX_COUNT: AtomicI32 = AtomicI32::new(0);
+
     sniffer.set_promiscuous_mode(true).unwrap();
     sniffer.set_receive_cb(|packet| {
         if let Ok(fcf) = packet.data.pread(0).map(FrameControlField::from_bits) {
@@ -71,14 +101,23 @@ pub async fn wifi_test_task(
         let _ = match_frames! {
             packet.data,
             data = ieee80211::data_frame::DataFrame  => {
+                defmt::debug!("Frame ctrl: {:?}", packet.rx_cntl);
                 defmt::debug!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
+
+                RX_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         };
     });
 
+    let chip_mac = {
+        let mut mac = [0u8; 6];
+        esp_wifi::wifi::get_sta_mac(&mut mac);
+        mac
+    };
+
     // e8:65:d4:cb:74:19
-    let transmitter_addr = mac_parser::MACAddress::new([0xe8, 0x65, 0xd4, 0xcb, 0x74, 0x19]);
-    let my_mac = mac_parser::MACAddress::new([0x74, 0x19, 0xff, 0xfc, 0xff, 0xff]);
+    let transmitter_addr = mac_parser::MACAddress::new(chip_mac);
+    let my_mac = mac_parser::MACAddress::new(chip_mac);
 
     let super_long_payload = [0xFEu8; 400];
     let frame = DataFrameBuilder::new()
@@ -92,12 +131,6 @@ pub async fn wifi_test_task(
         .receiver_address(mac_parser::BROADCAST)
         .build();
 
-    // frame.header.subtype = DataFrameSubtype::Null;
-    // frame.header.fcf_flags.set_to_ds(true);
-    // frame.header.sequence_control.set_sequence_number(2374);
-
-    defmt::info!("Frame: {:?}", frame);
-
     let mut frame_buf = [0u8; 1000];
 
     let length = frame_buf.pwrite(frame, 0).unwrap();
@@ -105,12 +138,27 @@ pub async fn wifi_test_task(
 
     defmt::info!("Frame buf: {:x}", frame_buf);
 
+    let mut tx_count = 0;
+
     loop {
         let current_time = Instant::now();
-        sniffer.send_raw_frame(false, frame_buf, true).unwrap();
+        if sniffer.send_raw_frame(false, frame_buf, true).is_ok() {
+            tx_count += 1;
+        }
         let elapsed = current_time.elapsed();
 
-        defmt::info!("TX time: {:?} us", elapsed.as_micros());
-        Timer::after_secs(3).await;
+        if tx_count % 500 == 0 {
+            defmt::info!("TX time: {:?} us", elapsed.as_micros());
+            defmt::info!(
+                "TX count: {}, RX count: {}",
+                tx_count,
+                RX_COUNT.load(Ordering::Relaxed)
+            );
+        }
+        if tx_count % 10000 == 0 {
+            RX_COUNT.store(0, Ordering::Relaxed);
+            tx_count = 0;
+        }
+        Timer::after_micros(tx_delay_us).await;
     }
 }
