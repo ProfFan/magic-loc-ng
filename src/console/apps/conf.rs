@@ -1,13 +1,11 @@
-use core::any::TypeId;
-
 use crate::configuration::ConfigurationStore;
 
 use super::Token;
 use alloc::sync::Arc;
 use bstr::ByteSlice;
+use core::any::TypeId;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-
-extern crate alloc;
+use embassy_time::{Duration, Timer};
 
 /// Configuration Set and Get Application
 ///
@@ -121,6 +119,25 @@ pub async fn conf<'a>(
                 }
             }
         }
+
+        // IP Address
+        if type_id.type_id == TypeId::of::<[u8; 4]>() {
+            let ipv4_addr = value.parse::<smoltcp::wire::Ipv4Address>().unwrap();
+            let result = config_store
+                .lock()
+                .await
+                .set::<[u8; 4]>(&key, ipv4_addr.0)
+                .await;
+            match result {
+                Ok(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Config set\n");
+                }
+                Err(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
+                    return Err(());
+                }
+            }
+        }
     }
 
     if args[1] == Token::String("get") {
@@ -174,15 +191,31 @@ pub async fn conf<'a>(
                 }
             }
         }
+
+        // IP Address
+        if entry.unwrap().type_id == TypeId::of::<[u8; 4]>() {
+            let value = config_store
+                .lock()
+                .await
+                .get::<[u8; 4]>(&mut buffer, &key)
+                .await;
+
+            match value {
+                Ok(value) => match value {
+                    Some(value) => {
+                        let s = alloc::format!("{:?}\n", value);
+                        let _ = esp_fast_serial::write_to_usb_serial_buffer(s.as_bytes());
+                    }
+                    None => {
+                        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Value not found\n");
+                    }
+                },
+                Err(_) => {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Configuration error\n");
+                }
+            }
+        }
     }
 
-    Ok(())
-}
-
-pub async fn free<'a>(_: &[Token<'a>]) -> Result<(), ()> {
-    let free_mem = esp_alloc::HEAP.free();
-    let _ = esp_fast_serial::write_to_usb_serial_buffer(
-        alloc::format!("Free memory: {} bytes\n", free_mem).as_bytes(),
-    );
     Ok(())
 }

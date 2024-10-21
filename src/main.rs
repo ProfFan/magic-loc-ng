@@ -89,10 +89,13 @@ async fn main(spawner: Spawner) {
     defmt::info!("Configuration version: {}", ver);
 
     // Spawners
+    static EXECUTOR_L2: StaticCell<InterruptExecutor<1>> = StaticCell::new();
+    let executor_l2 = EXECUTOR_L2.init(InterruptExecutor::new(sw_ints.software_interrupt1));
+    let spawner_l2 = executor_l2.start(interrupt::Priority::Priority2);
 
     // Start the serial comm as early as possible
     // Since the `esp-println` impl will block if buffer becomes full
-    spawner
+    spawner_l2
         .spawn(esp_fast_serial::serial_comm_task(peripherals.USB_DEVICE))
         .unwrap();
 
@@ -126,7 +129,12 @@ async fn main(spawner: Spawner) {
     .unwrap();
 
     spawner
-        .spawn(network::wifi_test_task(config_store.clone(), init, wifi))
+        .spawn(network::wifi_driver_task(
+            config_store.clone(),
+            init,
+            wifi,
+            spawner.clone(),
+        ))
         .unwrap();
 
     Timer::after_secs(1).await;
@@ -191,10 +199,6 @@ async fn main(spawner: Spawner) {
         >,
     > = StaticCell::new();
     let imu_pubsub = IMU_PUBSUB.init(imu_pubsub_);
-
-    static EXECUTOR_L2: StaticCell<InterruptExecutor<1>> = StaticCell::new();
-    let executor_l2 = EXECUTOR_L2.init(InterruptExecutor::new(sw_ints.software_interrupt1));
-    let spawner_l2 = executor_l2.start(interrupt::Priority::Priority2);
 
     spawner_l2
         .spawn(inertial::imu_task(

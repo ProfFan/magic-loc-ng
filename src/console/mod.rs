@@ -124,6 +124,12 @@ pub async fn console(
                 "free" => {
                     let _ = apps::free(&tokens).await;
                 }
+                "ping" => {
+                    let _ = apps::ping(&tokens).await;
+                }
+                "pong" => {
+                    let _ = apps::pong(&tokens).await;
+                }
                 _ => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");
                 }

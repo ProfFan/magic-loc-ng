@@ -83,7 +83,7 @@ defmt = { package = "defmt", version = "0.3.8", features = ["encoding-rzcobs"] }
 # defmt-rtt = "0.4.1"
 esp-alloc = { version = "0.5.*" }
 smoltcp = { version = "0.11.0", default-features = false, features = [
-    "proto-igmp",
+    # "proto-igmp",
     "proto-ipv4",
     "socket-tcp",
     "socket-icmp",
@@ -93,6 +93,7 @@ smoltcp = { version = "0.11.0", default-features = false, features = [
     "proto-dhcpv4",
     "socket-raw",
     "socket-dhcpv4",
+    "alloc",
 ] }
 embedded-svc = { version = "0.28.0", default-features = false, features = [] }
 embedded-io = "0.6.1"
@@ -109,6 +110,14 @@ embassy-time = { version = "0.3.1", features = [
 embassy-futures = "*"
 embassy-sync = "0.6.0"
 embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
+embassy-net = { version = "0.4.0", features = [
+    "defmt",
+    "proto-ipv4",
+    "medium-ip",
+    "medium-ethernet",
+    "udp",
+] }
+embassy-net-driver-channel = "0.3.0"
 
 scopeguard = { version = "^1.2.0", default-features = false }
 
@@ -164,4 +173,8 @@ partition_table = "partitions.csv"
 # esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal-embassy" }
 # esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-metadata" }
 # esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-alloc" }
+# embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net" }
+# embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time" }
+# embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time-driver" }
+# smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
 dw3000-ng = { path = "../dw3000" }

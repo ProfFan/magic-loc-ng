@@ -42,14 +42,19 @@ pub async fn display_task(
         .build();
 
     loop {
-        let mut time_str = heapless::String::<64>::new();
-        write!(time_str, "T={}", Instant::now().as_millis()).unwrap();
-        let text = Text::with_baseline(&time_str, Point::zero(), text_style, Baseline::Top);
-        disp.fill_solid(&text.bounding_box(), BinaryColor::Off)
-            .unwrap();
-        text.draw(&mut disp).unwrap();
+        async || -> Option<()> {
+            let mut time_str = heapless::String::<64>::new();
+            write!(time_str, "T={}", Instant::now().as_millis()).ok()?;
+            let text = Text::with_baseline(&time_str, Point::zero(), text_style, Baseline::Top);
+            disp.fill_solid(&text.bounding_box(), BinaryColor::Off)
+                .ok()?;
+            text.draw(&mut disp).ok()?;
 
-        disp.flush().await.unwrap();
+            disp.flush().await.ok()?;
+
+            Some(())
+        }()
+        .await;
 
         Timer::after_millis(1000).await;
     }
