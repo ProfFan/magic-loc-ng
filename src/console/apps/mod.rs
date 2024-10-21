@@ -1,6 +1,6 @@
 use super::Token;
 use embassy_futures::select::{select, Either};
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 
 extern crate alloc;
 
@@ -22,7 +22,9 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
     }
 
     let ip_addr = if let Token::String(ip_addr) = args[1] {
-        ip_addr.parse::<smoltcp::wire::Ipv4Address>()?
+        ip_addr
+            .parse::<smoltcp::wire::Ipv4Address>()
+            .map_err(|_| ())?
     } else {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Invalid IP address\n");
         return Err(());
@@ -42,7 +44,7 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
-        stack,
+        stack.clone(),
         &mut rx_metadata_buffer,
         &mut rx_payload_buffer,
         &mut tx_metadata_buffer,
@@ -60,26 +62,30 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
         let send_result = select(
             async {
                 socket
-                    .send_to(packet, embassy_net::IpEndpoint::new(ip_addr.into(), 19888))
+                    .send_to(
+                        packet,
+                        embassy_net::IpEndpoint::new(embassy_net::IpAddress::Ipv4(ip_addr), 19888),
+                    )
                     .await
-                    .map_err(|_| {
-                        let _ =
-                            esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet\n");
-                    })
             },
             send_timeout,
         )
         .await;
 
         if let Either::Second(_) = send_result {
-            let _ =
-                esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet (timeout)\n");
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(
+                b"Failed to send packet (host unreachable?)\n",
+            );
             return Err(());
         }
 
+        let send_time = Instant::now();
+
         if let Either::First(r) = send_result {
             if r.is_err() {
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet\n");
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(
+                    alloc::format!("Failed to send packet: {:?}\n", r).as_bytes(),
+                );
                 return Err(());
             }
         }
@@ -92,10 +98,16 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
 
         match res {
             Either::First(_) => {
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Received reply\n");
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(
+                    alloc::format!(
+                        "Received reply, time: {}ms\n",
+                        send_time.elapsed().as_millis()
+                    )
+                    .as_bytes(),
+                );
             }
             Either::Second(_) => {
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Timeout\n");
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Timeout waiting for reply\n");
             }
         }
 
@@ -104,7 +116,7 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
     Ok(())
 }
 
-pub async fn pong<'a>(args: &[Token<'a>]) -> Result<(), ()> {
+pub async fn pong<'a>(_args: &[Token<'a>]) -> Result<(), ()> {
     let stack = crate::network::WIFI_STACK.get().await;
 
     if !stack.is_link_up() {
@@ -119,7 +131,7 @@ pub async fn pong<'a>(args: &[Token<'a>]) -> Result<(), ()> {
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
-        stack,
+        stack.clone(),
         &mut rx_metadata_buffer,
         &mut rx_payload_buffer,
         &mut tx_metadata_buffer,
@@ -138,7 +150,7 @@ pub async fn pong<'a>(args: &[Token<'a>]) -> Result<(), ()> {
 
     match res {
         Either::First(result) => {
-            if let Ok((size, endpoint)) = result {
+            if let Ok((_size, endpoint)) = result {
                 let _ = esp_fast_serial::write_to_usb_serial_buffer(
                     alloc::format!("Received ping from {:?}\n", endpoint).as_bytes(),
                 );
@@ -147,7 +159,8 @@ pub async fn pong<'a>(args: &[Token<'a>]) -> Result<(), ()> {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet\n");
                 })?;
 
-                socket.may_send();
+                socket.flush().await; // Ensure the response packet is sent
+
                 let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Sent pong\n");
             }
         }

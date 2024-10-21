@@ -126,7 +126,7 @@ pub async fn conf<'a>(
             let result = config_store
                 .lock()
                 .await
-                .set::<[u8; 4]>(&key, ipv4_addr.0)
+                .set::<[u8; 4]>(&key, ipv4_addr.octets())
                 .await;
             match result {
                 Ok(_) => {

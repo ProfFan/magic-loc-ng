@@ -191,8 +191,8 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
 
 #[task]
 #[ram]
-pub async fn net_task(stack: &'static embassy_net::Stack<Device<'static, APP_MTU>>) {
-    stack.run().await;
+pub async fn net_task(mut runner: embassy_net::Runner<'static, ch::Device<'static, APP_MTU>>) {
+    runner.run().await;
 }
 
 #[task]
@@ -201,9 +201,7 @@ pub async fn embassy_net_task(runner: Runner<'static, RAW_SIZE>) {
     runner.run().await;
 }
 
-pub static WIFI_STACK: OnceLock<
-    embassy_net::Stack<embassy_net_driver_channel::Device<'static, APP_MTU>>,
-> = OnceLock::new();
+pub static WIFI_STACK: OnceLock<embassy_net::Stack<'static>> = OnceLock::new();
 
 #[task]
 #[ram]
@@ -319,14 +317,14 @@ pub async fn wifi_driver_task(
     });
     let seed = 0;
     static RESOURCES: StaticCell<embassy_net::StackResources<2>> = StaticCell::new();
-    let stack = &*WIFI_STACK.get_or_init(|| {
-        embassy_net::Stack::new(
-            device,
-            config,
-            RESOURCES.init(embassy_net::StackResources::new()),
-            seed,
-        )
-    });
+
+    let (stack, net_runner) = embassy_net::new(
+        device,
+        config,
+        RESOURCES.init(embassy_net::StackResources::new()),
+        seed,
+    );
+    let stack = &*WIFI_STACK.get_or_init(|| stack);
 
     spawner
         .spawn(embassy_net_task(Runner {
@@ -335,7 +333,7 @@ pub async fn wifi_driver_task(
             ch: runner,
         }))
         .unwrap();
-    spawner.spawn(net_task(stack)).unwrap();
+    spawner.spawn(net_task(net_runner)).unwrap();
 
     stack.wait_config_up().await;
 

@@ -173,8 +173,9 @@ partition_table = "partitions.csv"
 # esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-hal-embassy" }
 # esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-metadata" }
 # esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "c26600f94349ab055fa12671273644611f18fdea", package = "esp-alloc" }
-# embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net" }
-# embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time" }
-# embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time-driver" }
-# smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time-driver" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net-driver-channel" }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
 dw3000-ng = { path = "../dw3000" }
