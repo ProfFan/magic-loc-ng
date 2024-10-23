@@ -10,7 +10,11 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
-use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
+use esp_wifi::{
+    self,
+    wifi::{Protocol, WifiError},
+    EspWifiInitialization,
+};
 
 use embassy_executor::{task, Spawner};
 use ieee80211::{
@@ -111,7 +115,7 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                         return;
                     }
 
-                    defmt::debug!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
+                    defmt::trace!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
 
                     let rx_chan_send = RX_CHAN_SEND.try_get().unwrap();
                     let mut rx_chan = rx_chan_send.try_lock().unwrap();
@@ -121,7 +125,7 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                     if let DataFrameReadPayload::Single(payload) = payload {
                         // Copy the data into the channel
                         if let Some(packet_buf) = rx_chan.try_send() {
-                            packet_buf.buf[..payload.len()].copy_from_slice(&payload[..]);
+                            packet_buf.buf[..payload.len()].copy_from_slice(payload);
                             packet_buf.len = payload.len();
                             rx_chan.send_done();
                         }
@@ -131,22 +135,20 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
         });
 
         let rx_fut = async move {
+            state_chan.set_link_state(LinkState::Up);
+
             loop {
-                state_chan.set_link_state(LinkState::Up);
+                let p = rx_chan.rx_buf().await;
+                let rx_buf = rx_recv.receive().await;
 
-                loop {
-                    let p = rx_chan.rx_buf().await;
-                    let rx_buf = rx_recv.receive().await;
-
-                    // Post the packet to the rx_chan
-                    if p.len() >= rx_buf.len {
-                        p[..rx_buf.len].copy_from_slice(&rx_buf.buf[..rx_buf.len]);
-                    } else {
-                        defmt::error!("Packet buffer too small: {} < {}", p.len(), rx_buf.len);
-                    }
-                    rx_chan.rx_done(rx_buf.len);
-                    rx_recv.receive_done();
+                // Post the packet to the rx_chan
+                if p.len() >= rx_buf.len {
+                    p[..rx_buf.len].copy_from_slice(&rx_buf.buf[..rx_buf.len]);
+                } else {
+                    defmt::error!("Packet buffer too small: {} < {}", p.len(), rx_buf.len);
                 }
+                rx_chan.rx_done(rx_buf.len);
+                rx_recv.receive_done();
             }
         };
 
@@ -175,7 +177,9 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                     .send_raw_frame(false, &send_buf[..len_written], false)
                 {
                     Ok(_) => defmt::debug!("Sent raw frame"),
-                    Err(e) => defmt::error!("Failed to send raw frame: {:?}", e),
+                    Err(e) => {
+                        defmt::error!("Failed to send raw frame: {:?}", e)
+                    }
                 }
 
                 tx_chan.tx_done();
@@ -324,7 +328,7 @@ pub async fn wifi_driver_task(
         RESOURCES.init(embassy_net::StackResources::new()),
         seed,
     );
-    let stack = &*WIFI_STACK.get_or_init(|| stack);
+    let stack = WIFI_STACK.get_or_init(|| stack);
 
     spawner
         .spawn(embassy_net_task(Runner {

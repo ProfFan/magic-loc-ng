@@ -42,7 +42,7 @@ pub async fn display_task(
         .build();
 
     loop {
-        async || -> Option<()> {
+        async {
             let mut time_str = heapless::String::<64>::new();
             write!(time_str, "T={}", Instant::now().as_millis()).ok()?;
             let text = Text::with_baseline(&time_str, Point::zero(), text_style, Baseline::Top);
@@ -53,7 +53,7 @@ pub async fn display_task(
             disp.flush().await.ok()?;
 
             Some(())
-        }()
+        }
         .await;
 
         Timer::after_millis(1000).await;

@@ -7,6 +7,15 @@ extern crate alloc;
 pub mod conf;
 pub use conf::conf;
 
+pub mod iperf;
+pub use iperf::iperf;
+
+pub mod imu_stream;
+pub use imu_stream::imu_stream;
+
+pub mod imu_recv;
+pub use imu_recv::imu_recv;
+
 pub async fn free<'a>(_: &[Token<'a>]) -> Result<(), ()> {
     let free_mem = esp_alloc::HEAP.free();
     let _ = esp_fast_serial::write_to_usb_serial_buffer(
@@ -142,32 +151,42 @@ pub async fn pong<'a>(_args: &[Token<'a>]) -> Result<(), ()> {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to bind UDP socket\n");
     })?;
 
-    let timeout = Timer::after(Duration::from_millis(10000)); // 10 second timeout
+    let mut pong_count = 0;
 
-    let mut recv_buffer = [0; 1024];
-
-    let res = select(socket.recv_from(&mut recv_buffer), timeout).await;
-
-    match res {
-        Either::First(result) => {
-            if let Ok((_size, endpoint)) = result {
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(
-                    alloc::format!("Received ping from {:?}\n", endpoint).as_bytes(),
-                );
-                let packet = b"Pong!";
-                socket.send_to(packet, endpoint).await.map_err(|_| {
-                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet\n");
-                })?;
-
-                socket.flush().await; // Ensure the response packet is sent
-
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Sent pong\n");
-            }
+    loop {
+        if pong_count > 20 {
+            break;
         }
-        Either::Second(_) => {
-            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Timeout\n");
 
-            return Err(());
+        let mut recv_buffer = [0; 1024];
+
+        let timeout = Timer::after(Duration::from_millis(10000)); // 10 second timeout
+
+        let res = select(socket.recv_from(&mut recv_buffer), timeout).await;
+
+        match res {
+            Either::First(result) => {
+                if let Ok((_size, endpoint)) = result {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(
+                        alloc::format!("Received ping from {:?}\n", endpoint).as_bytes(),
+                    );
+                    let packet = b"Pong!";
+                    socket.send_to(packet, endpoint).await.map_err(|_| {
+                        let _ =
+                            esp_fast_serial::write_to_usb_serial_buffer(b"Failed to send packet\n");
+                    })?;
+
+                    socket.flush().await; // Ensure the response packet is sent
+
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Sent pong\n");
+                    pong_count += 1;
+                }
+            }
+            Either::Second(_) => {
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Timeout\n");
+
+                return Err(());
+            }
         }
     }
 

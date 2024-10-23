@@ -5,7 +5,6 @@ use alloc::sync::Arc;
 use bstr::ByteSlice;
 use core::any::TypeId;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-use embassy_time::{Duration, Timer};
 
 /// Configuration Set and Get Application
 ///

@@ -130,6 +130,15 @@ pub async fn console(
                 "pong" => {
                     let _ = apps::pong(&tokens).await;
                 }
+                "iperf" => {
+                    let _ = apps::iperf(&tokens).await;
+                }
+                "imu_stream" => {
+                    let _ = apps::imu_stream(spawner, &tokens).await;
+                }
+                "imu_recv" => {
+                    let _ = apps::imu_recv(spawner, &tokens).await;
+                }
                 _ => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");
                 }

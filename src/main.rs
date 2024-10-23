@@ -19,6 +19,7 @@ mod utils;
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     mutex::Mutex,
+    once_lock::OnceLock,
 };
 use esp_hal_embassy::{Executor, InterruptExecutor};
 use static_cell::StaticCell;
@@ -45,6 +46,16 @@ use esp_wifi::{self, EspWifiInitFor};
 
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
+
+static IMU_PUBSUB: OnceLock<
+    embassy_sync::pubsub::PubSubChannel<
+        CriticalSectionRawMutex,
+        icm426xx::fifo::FifoPacket4,
+        3,
+        1,
+        1,
+    >,
+> = OnceLock::new();
 
 #[main]
 async fn main(spawner: Spawner) {
@@ -133,7 +144,7 @@ async fn main(spawner: Spawner) {
             config_store.clone(),
             init,
             wifi,
-            spawner.clone(),
+            spawner,
         ))
         .unwrap();
 
@@ -189,16 +200,8 @@ async fn main(spawner: Spawner) {
         1,
         1,
     >::new();
-    static IMU_PUBSUB: StaticCell<
-        embassy_sync::pubsub::PubSubChannel<
-            CriticalSectionRawMutex,
-            icm426xx::fifo::FifoPacket4,
-            3,
-            1,
-            1,
-        >,
-    > = StaticCell::new();
-    let imu_pubsub = IMU_PUBSUB.init(imu_pubsub_);
+
+    let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
 
     spawner_l2
         .spawn(inertial::imu_task(
