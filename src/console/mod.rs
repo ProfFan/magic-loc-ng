@@ -93,6 +93,10 @@ pub async fn console(
             }
 
             if buf[0] != b'\n' && buf[0] != b'\r' {
+                if buf[0] == core::ascii::Char::Backspace.to_u8() {
+                    command_buffer.pop();
+                    continue;
+                }
                 let not_full = command_buffer.push(buf[0]);
                 if not_full.is_err() {
                     command_buffer.clear();
@@ -138,6 +142,9 @@ pub async fn console(
                 }
                 "imu_recv" => {
                     let _ = apps::imu_recv(spawner, &tokens).await;
+                }
+                "reset" => {
+                    let _ = apps::reset(&tokens).await;
                 }
                 _ => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");

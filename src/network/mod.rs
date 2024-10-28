@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use embassy_futures::select::{select, Either};
 use embassy_net::driver::LinkState;
-use embassy_net_driver_channel::{self as ch, Device};
+use embassy_net_driver_channel as ch;
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     mutex::Mutex,
@@ -10,11 +10,7 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
-use esp_wifi::{
-    self,
-    wifi::{Protocol, WifiError},
-    EspWifiInitialization,
-};
+use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
 
 use embassy_executor::{task, Spawner};
 use ieee80211::{
@@ -100,12 +96,6 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
         RX_CHAN_SEND.get_or_init(|| Mutex::new(rx_send));
 
         self.sniffer.set_receive_cb(|packet| {
-            // if let Ok(fcf) = packet.data.pread(0).map(FrameControlField::from_bits) {
-            //     if let FrameType::Data(data_subtype) = fcf.frame_type() {
-            //         defmt::debug!("Received data frame with subtype: {:?}", data_subtype);
-            //     }
-            // }
-
             let _ = match_frames! {
                 packet.data,
                 data = ieee80211::data_frame::DataFrame  => {

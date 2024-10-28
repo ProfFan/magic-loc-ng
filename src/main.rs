@@ -6,6 +6,8 @@
 #![feature(async_closure)]
 #![feature(async_fn_traits)]
 #![feature(let_chains)]
+#![feature(ascii_char)]
+#![feature(ascii_char_variants)]
 
 mod configuration;
 mod console;
@@ -219,38 +221,38 @@ async fn main(spawner: Spawner) {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 =
             EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
-        let spawner = executor_core1.start(interrupt::Priority::Priority2);
-
-        let dw_cs = io.pins.gpio8;
-        let dw_rst = io.pins.gpio9;
-        let dw_irq = io.pins.gpio15;
-
-        let dw_sclk = io.pins.gpio36;
-        let dw_mosi = io.pins.gpio35;
-        let dw_miso = io.pins.gpio37;
-
-        let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0)
-            .with_sck(dw_sclk)
-            .with_miso(dw_miso)
-            .with_mosi(dw_mosi);
-
-        let dma_channel = dma.channel1;
-
-        // Start the ranging task
-        spawner
-            .spawn(ranging::uwb_driver_task(
-                config_store_,
-                spi,
-                Output::new(dw_cs, Level::High),
-                Output::new(dw_rst, Level::High),
-                Input::new(dw_irq, Pull::Up),
-                dma_channel,
-            ))
-            .unwrap();
+        let _spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
 
         static EXECUTOR: StaticCell<Executor> = StaticCell::new();
         let executor = EXECUTOR.init(Executor::new());
-        executor.run(|_| {});
+        executor.run(move |spawner| {
+            let dw_cs = io.pins.gpio8;
+            let dw_rst = io.pins.gpio9;
+            let dw_irq = io.pins.gpio15;
+
+            let dw_sclk = io.pins.gpio36;
+            let dw_mosi = io.pins.gpio35;
+            let dw_miso = io.pins.gpio37;
+
+            let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0)
+                .with_sck(dw_sclk)
+                .with_miso(dw_miso)
+                .with_mosi(dw_mosi);
+
+            let dma_channel = dma.channel1;
+
+            // Start the ranging task
+            spawner
+                .spawn(ranging::uwb_driver_task(
+                    config_store_,
+                    spi,
+                    Output::new(dw_cs, Level::High),
+                    Output::new(dw_rst, Level::High),
+                    Input::new(dw_irq, Pull::Up),
+                    dma_channel,
+                ))
+                .unwrap();
+        });
     };
 
     defmt::info!("Starting core 1");

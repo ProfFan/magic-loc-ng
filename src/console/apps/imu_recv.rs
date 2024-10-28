@@ -43,7 +43,7 @@ pub async fn imu_recv_app(
 
     loop {
         let mut packet_buffer = [0; 1024];
-        let (len_recv, metadata) =
+        let (len_recv, _metadata) =
             match select(socket.recv_from(&mut packet_buffer), stop_token.wait()).await {
                 Either::First(recv) => recv.unwrap(),
                 Either::Second(_) => break,
@@ -63,8 +63,8 @@ pub async fn imu_recv_app(
 
             if let Some(last_sample) = imu_packet.packets.last() {
                 // fixed width integer formatting
-                defmt::info!(
-                    "IMU packet from {}: T_HOST: {:09}, ACC: ({:06}, {:06}, {:06}), GYR: ({:06}, {:06}, {:06}), TEMP: {:04}",
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(alloc::format!(
+                    "IMU packet from {:?}: T_HOST: {:09}, ACC: ({:06}, {:06}, {:06}), GYR: ({:06}, {:06}, {:06}), TEMP: {:04}",
                     imu_packet.origin,
                     imu_packet.timestamp,
                     last_sample.accel_data_x(),
@@ -74,7 +74,7 @@ pub async fn imu_recv_app(
                     last_sample.gyro_data_y(),
                     last_sample.gyro_data_z(),
                     last_sample.temperature_raw()
-                );
+                ).as_bytes());
             }
         }
     }

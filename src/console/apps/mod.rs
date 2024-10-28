@@ -192,3 +192,8 @@ pub async fn pong<'a>(_args: &[Token<'a>]) -> Result<(), ()> {
 
     Ok(())
 }
+
+pub async fn reset<'a>(_args: &[Token<'a>]) -> Result<(), ()> {
+    esp_hal::reset::software_reset();
+    Ok(())
+}
