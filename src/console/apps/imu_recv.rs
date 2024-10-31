@@ -85,7 +85,8 @@ pub async fn imu_recv_app(
 /// IMU receiver control command
 pub async fn imu_recv(spawner: Spawner, args: &[Token<'_>]) -> Result<(), ()> {
     if args.len() != 3 {
-        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: imu_recv <port> <start|stop>");
+        let _ =
+            esp_fast_serial::write_to_usb_serial_buffer(b"Usage: imu_recv <port> <start|stop>\n");
 
         return Err(());
     }
@@ -110,7 +111,7 @@ pub async fn imu_recv(spawner: Spawner, args: &[Token<'_>]) -> Result<(), ()> {
         "start" => {
             if !STOPPED_FLAG.load(core::sync::atomic::Ordering::Acquire) {
                 let _ =
-                    esp_fast_serial::write_to_usb_serial_buffer(b"IMU receiver already running");
+                    esp_fast_serial::write_to_usb_serial_buffer(b"IMU receiver already running\n");
                 return Err(());
             }
 
@@ -124,7 +125,7 @@ pub async fn imu_recv(spawner: Spawner, args: &[Token<'_>]) -> Result<(), ()> {
         }
         "stop" => {
             if STOPPED_FLAG.load(core::sync::atomic::Ordering::Acquire) {
-                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU receiver not running");
+                let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU receiver not running\n");
                 return Err(());
             }
 

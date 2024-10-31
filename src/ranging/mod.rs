@@ -1,4 +1,4 @@
-// pub mod uwb_driver;
+pub mod uwb_driver;
 
 use core::cell::OnceCell;
 
@@ -7,6 +7,7 @@ use dw3000_ng::{
     self,
     configs::{StsLen, StsMode},
     hl::ConfigGPIOs,
+    DW3000,
 };
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_sync::{
@@ -18,13 +19,18 @@ use esp_hal::{
     dma::ChannelCreator,
     gpio::{Input, Output},
     peripherals::SPI3,
-    spi::{master::Spi, FullDuplexMode},
+    spi::{
+        master::{Spi, SpiDmaBus},
+        FullDuplexMode,
+    },
+    Async,
 };
 use esp_hal::{
     dma::{DmaPriority, DmaRxBuf, DmaTxBuf},
     dma_buffers,
     macros::ram,
 };
+use static_cell::StaticCell;
 
 use crate::{configuration::ConfigurationStore, utils::nonblocking_wait_async};
 
