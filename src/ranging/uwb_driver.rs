@@ -1,31 +1,18 @@
-use core::{
-    cell::{OnceCell, RefCell},
-    mem::MaybeUninit,
-    task::Waker,
-};
+use core::{cell::RefCell, mem::MaybeUninit, task::Waker};
 
-use alloc::sync::Arc;
 use dw3000_ng::{
     self,
     configs::{StsLen, StsMode},
     hl::ConfigGPIOs,
 };
-use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    mutex::Mutex,
-    waitqueue::WakerRegistration,
+    blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, waitqueue::WakerRegistration,
     zerocopy_channel,
 };
 use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, Output};
-use esp_hal::{
-    dma::{DmaPriority, DmaRxBuf, DmaTxBuf},
-    dma_buffers,
-    macros::ram,
-};
 
-use crate::{configuration::ConfigurationStore, utils::nonblocking_wait_async};
+use crate::utils::nonblocking_wait_async;
 
 /// 127 bytes according to the 802.15.4 Standard
 pub const MTU_802154: usize = 127;
@@ -36,6 +23,7 @@ pub enum TxTiming {
     /// Send as fast as possible
     Now,
     /// Send after some time
+    #[allow(dead_code)]
     Delayed(dw3000_ng::time::Instant),
 }
 
@@ -45,6 +33,7 @@ pub enum RxTiming {
     /// Receive as fast as possible
     Now,
     /// Receive after some time (at the given DW3000 timestamp)
+    #[allow(dead_code)]
     Delayed(dw3000_ng::time::Instant),
 }
 
@@ -131,6 +120,7 @@ impl<const MTU: usize, const N_RX: usize, const N_TX: usize> State<MTU, N_RX, N_
 }
 
 pub struct Shared {
+    #[allow(dead_code)]
     waker: WakerRegistration,
 }
 
@@ -261,7 +251,7 @@ where
 
                     let mut sending = dw3000.send_raw(buf, tx_time_dw, &dwm_config).await.unwrap();
 
-                    let result = nonblocking_wait_async(
+                    let _result = nonblocking_wait_async(
                         async || -> Result<(), nb::Error<_>> {
                             let status = sending.s_wait().await;
 
@@ -341,7 +331,9 @@ where
 pub struct Device<'d, const MTU: usize> {
     pub tx: zerocopy_channel::Sender<'d, CriticalSectionRawMutex, UwbRequest<MTU>>,
     pub rx: zerocopy_channel::Receiver<'d, CriticalSectionRawMutex, UwbPacketRxBuf<MTU>>,
-    shared: &'d Mutex<CriticalSectionRawMutex, RefCell<Shared>>,
+
+    #[allow(dead_code)]
+    pub shared: &'d Mutex<CriticalSectionRawMutex, RefCell<Shared>>,
 }
 
 impl<'d, const MTU: usize> core::fmt::Debug for Device<'d, MTU> {

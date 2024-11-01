@@ -11,8 +11,8 @@ use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 use super::Token;
 
 pub async fn uwb_send<'a>(
-    reader: &Reader<'static, CriticalSectionRawMutex, 256>,
-    args: &[Token<'a>],
+    _reader: &Reader<'static, CriticalSectionRawMutex, 256>,
+    _args: &[Token<'a>],
 ) -> Result<(), ()> {
     let uwb_device = crate::UWB_DEVICE.get().await;
 

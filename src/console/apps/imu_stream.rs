@@ -70,7 +70,7 @@ pub async fn imu_stream_task(
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
-        stack.clone(),
+        *stack,
         &mut rx_metadata_buffer,
         &mut rx_payload_buffer,
         &mut tx_metadata_buffer,
@@ -117,7 +117,7 @@ pub async fn imu_stream<'a>(spawner: Spawner, args: &[Token<'a>]) -> Result<(), 
     }
 
     static STOP_SIGNAL: OnceLock<Signal<NoopRawMutex, bool>> = OnceLock::new();
-    let stop_signal = STOP_SIGNAL.get_or_init(|| Signal::new());
+    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
     static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
 
     let command = &args[1];

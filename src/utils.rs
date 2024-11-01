@@ -1,7 +1,6 @@
 use core::{future::Future, ops::AsyncFnMut};
 
 use embassy_time::Instant;
-use nb;
 
 #[inline]
 #[allow(dead_code)]

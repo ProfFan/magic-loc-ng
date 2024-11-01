@@ -225,7 +225,7 @@ async fn main(spawner: Spawner) {
         .unwrap();
 
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-    let config_store_ = config_store.clone();
+    let _config_store_ = config_store.clone();
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 =
@@ -279,7 +279,7 @@ async fn main(spawner: Spawner) {
                 >,
             > = StaticCell::new();
             let spi_dev = SPI_DEV
-                .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(&bus, dw_cs));
+                .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs));
 
             static STATE: StaticCell<ranging::uwb_driver::State<127, 1, 1>> = StaticCell::new();
             let state = STATE.init(ranging::uwb_driver::State::<127, 1, 1>::new());

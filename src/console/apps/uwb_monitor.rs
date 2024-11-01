@@ -7,8 +7,8 @@ use crate::ranging::uwb_driver::RxTiming;
 use super::Token;
 
 pub async fn uwb_monitor<'a>(
-    reader: &Reader<'static, CriticalSectionRawMutex, 256>,
-    args: &[Token<'a>],
+    _reader: &Reader<'static, CriticalSectionRawMutex, 256>,
+    _args: &[Token<'a>],
 ) -> Result<(), ()> {
     let uwb_device = crate::UWB_DEVICE.get().await;
 

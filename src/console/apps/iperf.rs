@@ -4,7 +4,7 @@ pub async fn iperf_server() -> Result<(), ()> {
     Ok(())
 }
 
-pub async fn iperf_client(ip_addr: smoltcp::wire::Ipv4Address) -> Result<(), ()> {
+pub async fn iperf_client(_ip_addr: smoltcp::wire::Ipv4Address) -> Result<(), ()> {
     Ok(())
 }
 
