@@ -81,7 +81,7 @@ pub struct RxMetadata {
 }
 
 /// Rx packet buffer
-#[derive(Debug, Clone, Copy, defmt::Format)]
+#[derive(Clone, Copy, defmt::Format)]
 pub struct UwbPacketRxBuf<const MTU: usize> {
     pub rx_meta: RxMetadata,
     /// Time at which the packet was received
@@ -89,7 +89,26 @@ pub struct UwbPacketRxBuf<const MTU: usize> {
     /// Length of the packet
     pub len: usize,
     /// Buffer containing the packet
-    pub buf: [u8; MTU],
+    pub buf: [MaybeUninit<u8>; MTU],
+}
+
+impl<const MTU: usize> UwbPacketRxBuf<MTU> {
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { core::mem::transmute::<&[MaybeUninit<u8>], &[u8]>(&self.buf[..self.len]) }
+    }
+}
+
+impl<const MTU: usize> core::fmt::Debug for UwbPacketRxBuf<MTU> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("UwbPacketRxBuf")
+            .field("rx_meta", &self.rx_meta)
+            .field("rx_time", &self.rx_time)
+            .field("len", &self.len)
+            .field("buf", &unsafe {
+                core::mem::transmute::<&[MaybeUninit<u8>], &[u8]>(&self.buf[..self.len])
+            })
+            .finish()
+    }
 }
 
 impl<const MTU: usize> Default for UwbPacketRxBuf<MTU> {
@@ -98,7 +117,7 @@ impl<const MTU: usize> Default for UwbPacketRxBuf<MTU> {
             rx_meta: RxMetadata::default(),
             rx_time: dw3000_ng::time::Instant::new(0).unwrap(),
             len: 0,
-            buf: [0; MTU],
+            buf: [MaybeUninit::uninit(); MTU],
         }
     }
 }
@@ -211,24 +230,24 @@ where
             panic!();
         }
 
-        dw3000
-            .ll()
-            .rx_fwto()
-            .write(|w| w.value(1000000))
-            .await
-            .unwrap();
-        dw3000
-            .ll()
-            .sys_cfg()
-            .modify(|_, w| w.rxwtoe(1))
-            .await
-            .unwrap();
-        dw3000
-            .ll()
-            .sys_status()
-            .modify(|_, w| w.rxfto(1))
-            .await
-            .unwrap();
+        // dw3000
+        //     .ll()
+        //     .rx_fwto()
+        //     .write(|w| w.value(1000000))
+        //     .await
+        //     .unwrap();
+        // dw3000
+        //     .ll()
+        //     .sys_cfg()
+        //     .modify(|_, w| w.rxwtoe(1))
+        //     .await
+        //     .unwrap();
+        // dw3000
+        //     .ll()
+        //     .sys_status()
+        //     .modify(|_, w| w.rxfto(1))
+        //     .await
+        //     .unwrap();
 
         loop {
             // First get the current request
@@ -296,7 +315,14 @@ where
                         _,
                     > = nonblocking_wait_async(
                         async || -> Result<_, nb::Error<_>> {
-                            receiving.r_wait_buf(buffer.buf.as_mut_slice()).await
+                            receiving
+                                // SAFETY: `r_wait_buf` will only write to the buffer
+                                .r_wait_buf(unsafe {
+                                    core::mem::transmute::<&mut [MaybeUninit<u8>], &mut [u8]>(
+                                        &mut buffer.buf,
+                                    )
+                                })
+                                .await
                         },
                         &mut self.irq,
                     )
@@ -310,7 +336,7 @@ where
                             self.rx.send_done();
                         }
                         Err(e) => {
-                            defmt::error!("Failed to receive: {}", e);
+                            defmt::debug!("Failed to receive: {}", e);
                             dw3000 = receiving.finish_receiving().await.unwrap();
                             buffer.rx_meta.success = false;
                             self.rx.send_done();
