@@ -19,16 +19,18 @@ pub async fn uwb_monitor<'a>(
         let mut uwb_device = uwb_device.lock().await;
         uwb_device.send_rx_request(RxTiming::Now).await;
 
-        let mut key_buffer = [0u8; 1];
-        let keyboard_event = reader.read(&mut key_buffer);
+        let keyboard_event = async {
+            let mut key_buffer = [0u8; 1];
+            loop {
+                let len = reader.read(&mut key_buffer).await;
+                if len > 0 && key_buffer[0] == b'q' {
+                    break;
+                }
+            }
+        };
         let packet = match select(uwb_device.rx.receive(), keyboard_event).await {
             Either::First(packet) => packet,
-            Either::Second(len) => {
-                if len > 0 && key_buffer[0] == b'q' {
-                    return Ok(());
-                }
-                continue;
-            }
+            Either::Second(_) => return Ok(()),
         };
 
         defmt::trace!("UWB Packet: {:?}", packet);

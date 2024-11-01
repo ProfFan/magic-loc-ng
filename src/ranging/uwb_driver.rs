@@ -51,7 +51,7 @@ impl<const MTU: usize> UwbPacketTxRequest<MTU> {
         Self {
             tx_time: TxTiming::Now,
             len: 0,
-            buf: [MaybeUninit::uninit(); MTU],
+            buf: [const { MaybeUninit::uninit() }; MTU],
             waker: None,
         }
     }
@@ -117,7 +117,7 @@ impl<const MTU: usize> Default for UwbPacketRxBuf<MTU> {
             rx_meta: RxMetadata::default(),
             rx_time: dw3000_ng::time::Instant::new(0).unwrap(),
             len: 0,
-            buf: [MaybeUninit::uninit(); MTU],
+            buf: [const { MaybeUninit::uninit() }; MTU],
         }
     }
 }
@@ -133,7 +133,7 @@ impl<const MTU: usize, const N_RX: usize, const N_TX: usize> State<MTU, N_RX, N_
         Self {
             tx: core::array::from_fn(|_| UwbRequest::<MTU>::default()),
             rx: core::array::from_fn(|_| UwbPacketRxBuf::<MTU>::default()),
-            inner: MaybeUninit::uninit(),
+            inner: const { MaybeUninit::uninit() },
         }
     }
 }
