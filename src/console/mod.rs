@@ -143,6 +143,12 @@ pub async fn console(
                 "imu_recv" => {
                     let _ = apps::imu_recv(spawner, &tokens).await;
                 }
+                "uwb_monitor" => {
+                    let _ = apps::uwb_monitor(&serial_in, &tokens).await;
+                }
+                "uwb_send" => {
+                    let _ = apps::uwb_send(&serial_in, &tokens).await;
+                }
                 "reset" => {
                     let _ = apps::reset(&tokens).await;
                 }

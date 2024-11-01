@@ -25,7 +25,7 @@ pub async fn imu_recv_app(
     let mut tx_payload_buffer = [0; 1024];
 
     let mut socket = embassy_net::udp::UdpSocket::new(
-        stack.clone(),
+        *stack,
         &mut rx_metadata_buffer,
         &mut rx_payload_buffer,
         &mut tx_metadata_buffer,
@@ -64,7 +64,7 @@ pub async fn imu_recv_app(
             if let Some(last_sample) = imu_packet.packets.last() {
                 // fixed width integer formatting
                 let _ = esp_fast_serial::write_to_usb_serial_buffer(alloc::format!(
-                    "IMU packet from {:?}: T_HOST: {:09}, ACC: ({:06}, {:06}, {:06}), GYR: ({:06}, {:06}, {:06}), TEMP: {:04}",
+                    "IMU packet from {:?}: T_HOST: {:09}, ACC: ({:06}, {:06}, {:06}), GYR: ({:06}, {:06}, {:06}), TEMP: {:04}\n",
                     imu_packet.origin,
                     imu_packet.timestamp,
                     last_sample.accel_data_x(),
@@ -104,7 +104,7 @@ pub async fn imu_recv(spawner: Spawner, args: &[Token<'_>]) -> Result<(), ()> {
     };
 
     static STOP_SIGNAL: OnceLock<Signal<NoopRawMutex, bool>> = OnceLock::new();
-    let stop_signal = STOP_SIGNAL.get_or_init(|| Signal::new());
+    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
     static STOPPED_FLAG: AtomicBool = AtomicBool::new(true);
 
     match command {
@@ -118,7 +118,7 @@ pub async fn imu_recv(spawner: Spawner, args: &[Token<'_>]) -> Result<(), ()> {
             spawner
                 .spawn(imu_recv_app(
                     IpEndpoint::new(embassy_net::IpAddress::v4(0, 0, 0, 0), port),
-                    &stop_signal,
+                    stop_signal,
                     &STOPPED_FLAG,
                 ))
                 .unwrap();

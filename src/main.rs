@@ -36,11 +36,16 @@ use esp_backtrace as _;
 use esp_hal::{
     cpu_control::{CpuControl, Stack},
     dma::*,
+    dma_buffers,
     gpio::{Input, Io, Level, Output, Pull},
     interrupt::{self, software::SoftwareInterruptControl},
+    peripherals::SPI3,
     prelude::*,
     rng::Rng,
-    spi::{master::Spi, SpiMode},
+    spi::{
+        master::{Spi, SpiDmaBus},
+        FullDuplexMode, SpiMode,
+    },
     timer::{timg::TimerGroup, AnyTimer, OneShotTimer},
     Async,
 };
@@ -57,6 +62,10 @@ static IMU_PUBSUB: OnceLock<
         1,
         1,
     >,
+> = OnceLock::new();
+
+static UWB_DEVICE: OnceLock<
+    Mutex<CriticalSectionRawMutex, ranging::uwb_driver::Device<'static, 127>>,
 > = OnceLock::new();
 
 #[main]
@@ -241,17 +250,59 @@ async fn main(spawner: Spawner) {
 
             let dma_channel = dma.channel1;
 
-            // Start the ranging task
-            spawner
-                .spawn(ranging::uwb_driver_task(
-                    config_store_,
-                    spi,
-                    Output::new(dw_cs, Level::High),
-                    Output::new(dw_rst, Level::High),
-                    Input::new(dw_irq, Pull::Up),
-                    dma_channel,
-                ))
+            let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
+            let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+            let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+
+            let bus = spi
+                .with_dma(dma_channel.configure_for_async(false, DmaPriority::Priority0))
+                .with_buffers(dma_rx_buf, dma_tx_buf);
+
+            static BUS: StaticCell<
+                Mutex<
+                    NoopRawMutex,
+                    SpiDmaBus<'static, esp_hal::peripherals::SPI3, FullDuplexMode, Async>,
+                >,
+            > = StaticCell::new();
+            let bus: &'static Mutex<_, _> = BUS.init_with(|| Mutex::<NoopRawMutex, _>::new(bus));
+
+            let dw_rst = Output::new(dw_rst, Level::High);
+            let dw_irq = Input::new(dw_irq, Pull::Up);
+            let dw_cs = Output::new(dw_cs, Level::High);
+
+            static SPI_DEV: StaticCell<
+                embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice<
+                    'static,
+                    NoopRawMutex,
+                    SpiDmaBus<'static, SPI3, FullDuplexMode, Async>,
+                    Output<'static>,
+                >,
+            > = StaticCell::new();
+            let spi_dev = SPI_DEV
+                .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(&bus, dw_cs));
+
+            static STATE: StaticCell<ranging::uwb_driver::State<127, 1, 1>> = StaticCell::new();
+            let state = STATE.init(ranging::uwb_driver::State::<127, 1, 1>::new());
+
+            let (uwb_runner, uwb_device) = ranging::uwb_driver::new(state, spi_dev, dw_rst, dw_irq);
+
+            spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
+
+            UWB_DEVICE
+                .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
                 .unwrap();
+
+            // Start the ranging task
+            // spawner
+            //     .spawn(ranging::uwb_driver_task(
+            //         config_store_,
+            //         spi,
+            //         Output::new(dw_cs, Level::High),
+            //         Output::new(dw_rst, Level::High),
+            //         Input::new(dw_irq, Pull::Up),
+            //         dma_channel,
+            //     ))
+            //     .unwrap();
         });
     };
 

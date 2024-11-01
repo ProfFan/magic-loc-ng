@@ -93,7 +93,9 @@ pub async fn imu_stream_task(
 
         if records_written >= IMU_PACKET_HISTORY_SIZE / 2 {
             let wire_packet_bytes = unsafe {
-                core::mem::transmute::<_, &[u8; core::mem::size_of::<IMUPacket>()]>(&wire_packet)
+                core::mem::transmute::<&IMUPacket, &[u8; core::mem::size_of::<IMUPacket>()]>(
+                    &wire_packet,
+                )
             };
 
             socket.send_to(wire_packet_bytes, endpoint).await.unwrap();
@@ -130,7 +132,7 @@ pub async fn imu_stream<'a>(spawner: Spawner, args: &[Token<'a>]) -> Result<(), 
         }
 
         spawner
-            .spawn(imu_stream_task(&stop_signal, &STOPPED_SIGNAL))
+            .spawn(imu_stream_task(stop_signal, &STOPPED_SIGNAL))
             .unwrap();
 
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU stream started\n");
