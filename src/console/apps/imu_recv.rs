@@ -61,6 +61,11 @@ pub async fn imu_recv_app(
                 )
             };
 
+            if imu_packet.packets.len() > imu_packet.packets.capacity() {
+                defmt::error!("IMU packet history buffer overflow");
+                continue;
+            }
+
             if let Some(last_sample) = imu_packet.packets.last() {
                 // fixed width integer formatting
                 let _ = esp_fast_serial::write_to_usb_serial_buffer(alloc::format!(

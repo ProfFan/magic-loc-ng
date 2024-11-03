@@ -1,10 +1,9 @@
 use core::sync::atomic::AtomicBool;
 
+use crate::hist_buffer::HistoryBuffer;
 use embassy_executor::Spawner;
 use embassy_futures::select::{select, Either};
-use embassy_net::IpEndpoint;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, signal::Signal};
-use heapless::HistoryBuffer;
 
 use super::Token;
 
@@ -15,12 +14,14 @@ const IMU_PACKET_HISTORY_SIZE: usize = 10;
 #[derive(Debug)]
 #[repr(C)]
 pub struct IMUPacket {
-    /// IPv4 ddress of the sender
+    /// Protocol header
+    pub header: [u8; 4],
+    /// IPv4 address of the sender
     pub origin: [u8; 4],
     /// Timestamp in microseconds
     pub timestamp: u64,
     /// FIFO packets
-    pub packets: heapless::HistoryBuffer<icm426xx::fifo::FifoPacket4, IMU_PACKET_HISTORY_SIZE>,
+    pub packets: HistoryBuffer<icm426xx::fifo::FifoPacket4, IMU_PACKET_HISTORY_SIZE>,
 }
 
 /// `defmt` formatter for `IMUPacket`
@@ -45,18 +46,20 @@ pub async fn imu_stream_task(
 
     let mut imu_sub = IMU_PUBSUB.get().await.subscriber().unwrap();
 
-    let source_endpoint =
-        embassy_net::IpEndpoint::new(embassy_net::IpAddress::v4(0, 0, 0, 0), 50000);
-    let endpoint = IpEndpoint::new(embassy_net::IpAddress::v4(255, 255, 255, 255), 50001);
-
     let mut wire_packet = IMUPacket {
+        header: *b"MIMU",
         origin: [0; 4],
         timestamp: 0,
         packets: HistoryBuffer::new(),
     };
 
     let stack = crate::network::WIFI_STACK.get().await;
-    wire_packet.origin = stack.config_v4().unwrap().address.address().octets();
+    let address = stack.config_v4().unwrap().address;
+    wire_packet.origin = address.address().octets();
+
+    let source_endpoint = embassy_net::IpEndpoint::new(address.address().into(), 50000);
+    let endpoint =
+        embassy_net::IpEndpoint::new(embassy_net::IpAddress::v4(255, 255, 255, 255), 50001);
 
     if !stack.is_link_up() {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"WiFi not initialized\n");

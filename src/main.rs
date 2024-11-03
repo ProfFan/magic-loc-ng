@@ -12,6 +12,7 @@
 mod configuration;
 mod console;
 mod display;
+mod hist_buffer;
 mod indicator;
 mod inertial;
 mod network;
@@ -214,23 +215,23 @@ async fn main(spawner: Spawner) {
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
 
-    spawner_l2
-        .spawn(inertial::imu_task(
-            config_store.clone(),
-            Output::new(imu_cs, Level::High),
-            dma_channel,
-            spi,
-            imu_pubsub.publisher().unwrap(),
-        ))
-        .unwrap();
-
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-    let _config_store_ = config_store.clone();
+    let config_store_ = config_store.clone();
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 =
             EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
-        let _spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
+        let spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
+
+        spawner_l2
+            .spawn(inertial::imu_task(
+                config_store_.clone(),
+                Output::new(imu_cs, Level::High),
+                dma_channel,
+                spi,
+                imu_pubsub.publisher().unwrap(),
+            ))
+            .unwrap();
 
         static EXECUTOR: StaticCell<Executor> = StaticCell::new();
         let executor = EXECUTOR.init(Executor::new());

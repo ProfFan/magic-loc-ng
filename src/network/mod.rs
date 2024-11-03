@@ -3,7 +3,7 @@ use embassy_futures::select::{select, Either};
 use embassy_net::driver::LinkState;
 use embassy_net_driver_channel as ch;
 use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     mutex::Mutex,
     once_lock::OnceLock,
     zerocopy_channel::{self},
@@ -13,6 +13,10 @@ use esp_hal::macros::ram;
 use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
 
 use embassy_executor::{task, Spawner};
+use esp_wifi_sys::include::{
+    wifi_ap_config_t, wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK,
+    wifi_cipher_type_t_WIFI_CIPHER_TYPE_CCMP, wifi_config_t, wifi_pmf_config_t,
+};
 use ieee80211::{
     common::DataFrameSubtype,
     data_frame::{builder::DataFrameBuilder, DataFrameReadPayload},
@@ -78,7 +82,7 @@ static RX_CHAN: StaticCell<
 > = StaticCell::new();
 static RX_CHAN_SEND: OnceLock<
     Mutex<
-        CriticalSectionRawMutex,
+        NoopRawMutex,
         zerocopy_channel::Sender<'static, CriticalSectionRawMutex, RawPacketBuffer<RAW_SIZE>>,
     >,
 > = OnceLock::new();
@@ -214,10 +218,74 @@ pub async fn wifi_driver_task(
             ssid_hidden: true,
             channel: 7,
             protocols: Protocol::P802D11BGN.into(),
+            auth_method: esp_wifi::wifi::AuthMethod::WPA2Personal,
+            password: "do-not-conn3ct-to-me".try_into().unwrap(),
             ..Default::default()
         });
 
     wifi_ctl.set_configuration(&ap_config).unwrap();
+
+    let ap_conf_inner = ap_config.as_ap_conf_ref().unwrap();
+    let mut cfg = wifi_config_t {
+        ap: wifi_ap_config_t {
+            ssid: [0; 32],
+            password: [0; 64],
+            ssid_len: 0,
+            channel: ap_conf_inner.channel,
+            authmode: wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK,
+            ssid_hidden: if ap_conf_inner.ssid_hidden { 1 } else { 0 },
+            max_connection: ap_conf_inner.max_connections as u8,
+            beacon_interval: 5000,
+            pairwise_cipher: wifi_cipher_type_t_WIFI_CIPHER_TYPE_CCMP,
+            ftm_responder: false,
+            pmf_cfg: wifi_pmf_config_t {
+                capable: true,
+                required: true,
+            },
+            sae_pwe_h2e: 0,
+            csa_count: 3,
+            dtim_period: 2,
+        },
+    };
+    unsafe {
+        cfg.ap.ssid[0..(ap_conf_inner.ssid.len())].copy_from_slice(ap_conf_inner.ssid.as_bytes());
+        cfg.ap.ssid_len = ap_conf_inner.ssid.len() as u8;
+        cfg.ap.password[0..(ap_conf_inner.password.len())]
+            .copy_from_slice(ap_conf_inner.password.as_bytes());
+    }
+
+    if unsafe {
+        esp_wifi_sys::include::esp_wifi_set_config(
+            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+            &mut cfg,
+        )
+    } != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to set raw config");
+    }
+
+    // Disable 802.11b
+    if unsafe {
+        esp_wifi_sys::include::esp_wifi_config_11b_rate(
+            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+            true,
+        )
+    } != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to set 11b rate");
+    }
+
+    if unsafe {
+        esp_wifi_sys::include::esp_wifi_set_protocol(
+            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+            esp_wifi_sys::include::WIFI_PROTOCOL_11G as u8
+                | esp_wifi_sys::include::WIFI_PROTOCOL_11N as u8,
+        )
+    } != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to set protocol to 802.11g/n");
+    }
+
     wifi_ctl.start().await.unwrap();
 
     if unsafe {
@@ -310,7 +378,7 @@ pub async fn wifi_driver_task(
         dns_servers: heapless::Vec::new(),
     });
     let seed = 0;
-    static RESOURCES: StaticCell<embassy_net::StackResources<2>> = StaticCell::new();
+    static RESOURCES: StaticCell<embassy_net::StackResources<3>> = StaticCell::new();
 
     let (stack, net_runner) = embassy_net::new(
         device,

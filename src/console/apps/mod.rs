@@ -52,9 +52,9 @@ pub async fn ping<'a>(args: &[Token<'a>]) -> Result<(), ()> {
         return Err(());
     }
 
-    let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 2];
     let mut rx_payload_buffer = [0; 1024];
-    let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 2];
     let mut tx_payload_buffer = [0; 1024];
 
     // UDP socket
@@ -139,9 +139,9 @@ pub async fn pong<'a>(_args: &[Token<'a>]) -> Result<(), ()> {
         return Err(());
     }
 
-    let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 2];
     let mut rx_payload_buffer = [0; 1024];
-    let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 2];
     let mut tx_payload_buffer = [0; 1024];
 
     // UDP socket
