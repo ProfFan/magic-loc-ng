@@ -291,13 +291,13 @@ pub async fn wifi_driver_task(
     if unsafe {
         esp_wifi_sys::include::esp_wifi_config_80211_tx_rate(
             esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
-            esp_wifi_sys::include::wifi_phy_rate_t_WIFI_PHY_RATE_MCS4_LGI,
+            esp_wifi_sys::include::wifi_phy_rate_t_WIFI_PHY_RATE_MCS4_SGI,
         )
     } != esp_wifi_sys::include::ESP_OK as i32
     {
         defmt::error!("Failed to set tx rate");
     } else {
-        defmt::info!("Set tx rate to MCS4 LGI"); // MCS4 Long GI with 40MHz = 81 Mbps
+        defmt::info!("Set tx rate to MCS4 SGI"); // MCS4 Short GI with 40MHz = 90 Mbps
     }
 
     // Set bandwidth
