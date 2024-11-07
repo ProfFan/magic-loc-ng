@@ -1,13 +1,15 @@
-use core::{cell::RefCell, mem::MaybeUninit, task::Waker};
+use core::{cell::RefCell, mem::MaybeUninit};
 
+use alloc::sync::Arc;
 use dw3000_ng::{
     self,
     configs::{StsLen, StsMode},
     hl::ConfigGPIOs,
 };
+use embassy_futures::select::{select, Either};
 use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, waitqueue::WakerRegistration,
-    zerocopy_channel,
+    blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, once_lock::OnceLock,
+    waitqueue::WakerRegistration, zerocopy_channel,
 };
 use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, Output};
@@ -37,13 +39,18 @@ pub enum RxTiming {
     Delayed(dw3000_ng::time::Instant),
 }
 
+#[derive(Clone, defmt::Format)]
+pub struct TxResult {
+    pub success: bool,
+}
+
 /// Represents a packet of size MTU that is ready to be sent.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UwbPacketTxRequest<const MTU: usize> {
     pub tx_time: TxTiming,
     pub len: usize,
     pub buf: [MaybeUninit<u8>; MTU],
-    waker: Option<Waker>,
+    pub tx_result: Option<Arc<OnceLock<TxResult>>>,
 }
 
 impl<const MTU: usize> UwbPacketTxRequest<MTU> {
@@ -52,7 +59,7 @@ impl<const MTU: usize> UwbPacketTxRequest<MTU> {
             tx_time: TxTiming::Now,
             len: 0,
             buf: [const { MaybeUninit::uninit() }; MTU],
-            waker: None,
+            tx_result: None,
         }
     }
 }
@@ -63,12 +70,19 @@ pub struct UwbPacketRxRequest {
     rx_time: RxTiming,
 }
 
-#[derive(Debug, Clone, defmt::Format, Default)]
+#[derive(Clone, defmt::Format, Default)]
 pub enum UwbRequest<const MTU: usize> {
     #[default]
     None,
     Tx(UwbPacketTxRequest<MTU>),
     Rx(UwbPacketRxRequest),
+}
+
+#[derive(Debug, Clone, Copy, defmt::Format)]
+pub enum RxError {
+    Spi,
+    Phy,
+    Timeout,
 }
 
 /// Metadata for a received packet
@@ -78,6 +92,8 @@ pub struct RxMetadata {
     pub success: bool,
     /// RSSI of the received packet
     pub rssi: i8,
+    /// Error
+    pub error: Option<RxError>,
 }
 
 /// Rx packet buffer
@@ -230,24 +246,24 @@ where
             panic!();
         }
 
-        // dw3000
-        //     .ll()
-        //     .rx_fwto()
-        //     .write(|w| w.value(1000000))
-        //     .await
-        //     .unwrap();
-        // dw3000
-        //     .ll()
-        //     .sys_cfg()
-        //     .modify(|_, w| w.rxwtoe(1))
-        //     .await
-        //     .unwrap();
-        // dw3000
-        //     .ll()
-        //     .sys_status()
-        //     .modify(|_, w| w.rxfto(1))
-        //     .await
-        //     .unwrap();
+        dw3000
+            .ll()
+            .rx_fwto()
+            .write(|w| w.value(1000000))
+            .await
+            .unwrap();
+        dw3000
+            .ll()
+            .sys_cfg()
+            .modify(|_, w| w.rxwtoe(1))
+            .await
+            .unwrap();
+        dw3000
+            .ll()
+            .sys_status()
+            .modify(|_, w| w.rxfto(1))
+            .await
+            .unwrap();
 
         loop {
             // First get the current request
@@ -259,6 +275,15 @@ where
 
                     let tx_time = tx_request.tx_time;
                     let len = tx_request.len;
+                    if len > tx_request.buf.len() {
+                        defmt::error!("Invalid TX length: {}", len);
+                        if let Some(tx_result) = tx_request.tx_result.as_ref() {
+                            tx_result.init(TxResult { success: false }).unwrap_or(());
+                        }
+                        self.ioctl.receive_done(); // Mark the request as done
+                        continue;
+                    }
+
                     let buf = unsafe {
                         core::mem::transmute::<&[MaybeUninit<u8>], &[u8]>(&tx_request.buf[..len])
                     };
@@ -286,8 +311,8 @@ where
 
                     dw3000 = sending.finish_sending().await.unwrap();
 
-                    if let Some(waker) = tx_request.waker.take() {
-                        waker.wake();
+                    if let Some(tx_result) = tx_request.tx_result.as_ref() {
+                        tx_result.init(TxResult { success: true }).unwrap_or(());
                     }
 
                     self.ioctl.receive_done();
@@ -310,35 +335,88 @@ where
                     self.ioctl.receive_done();
 
                     let buffer = self.rx.send().await;
-                    let result: Result<
-                        (usize, dw3000_ng::time::Instant, dw3000_ng::hl::RxQuality),
-                        _,
-                    > = nonblocking_wait_async(
-                        async || -> Result<_, nb::Error<_>> {
-                            receiving
-                                // SAFETY: `r_wait_buf` will only write to the buffer
-                                .r_wait_buf(unsafe {
-                                    core::mem::transmute::<&mut [MaybeUninit<u8>], &mut [u8]>(
-                                        &mut buffer.buf,
-                                    )
-                                })
-                                .await
+                    let result = select(
+                        nonblocking_wait_async(
+                            async || -> Result<_, nb::Error<_>> {
+                                receiving
+                                    // SAFETY: `r_wait_buf` will only write to the buffer
+                                    .r_wait_buf(unsafe {
+                                        core::mem::transmute::<&mut [MaybeUninit<u8>], &mut [u8]>(
+                                            &mut buffer.buf,
+                                        )
+                                    })
+                                    .await
+                            },
+                            &mut self.irq,
+                        ),
+                        async {
+                            let ioctl_next = self.ioctl.receive().await;
+
+                            match ioctl_next {
+                                UwbRequest::None => return 0u8,
+                                UwbRequest::Rx(_) => return 1u8,
+                                UwbRequest::Tx(_) => return 2u8,
+                            }
                         },
-                        &mut self.irq,
                     )
                     .await;
+
+                    let result = match result {
+                        Either::First(result) => result,
+                        Either::Second(_) => {
+                            let ioctl_next = self.ioctl.receive().await;
+
+                            match ioctl_next {
+                                UwbRequest::None => {
+                                    // Cancel the receive
+                                    dw3000 = receiving.finish_receiving().await.unwrap();
+                                    buffer.rx_meta.success = false;
+                                    self.ioctl.receive_done();
+                                }
+                                UwbRequest::Rx(_) => {
+                                    // Rx request while receiving
+                                    dw3000 = receiving.finish_receiving().await.unwrap();
+                                    buffer.rx_meta.success = false;
+                                    self.ioctl.receive_done();
+                                }
+                                UwbRequest::Tx(tx_request) => {
+                                    // Tx request while receiving
+                                    dw3000 = receiving.finish_receiving().await.unwrap();
+                                    buffer.rx_meta.success = false;
+                                    if let Some(tx_result) = tx_request.tx_result.as_ref() {
+                                        tx_result.init(TxResult { success: false }).unwrap_or(());
+                                    }
+                                    self.ioctl.receive_done();
+                                }
+                            }
+
+                            continue;
+                        }
+                    };
 
                     match result {
                         Ok((len, rx_time, _rx_quality)) => {
                             buffer.len = len;
                             buffer.rx_time = rx_time;
                             buffer.rx_meta.success = true;
+                            buffer.rx_meta.error = None;
                             self.rx.send_done();
                         }
                         Err(e) => {
                             defmt::debug!("Failed to receive: {}", e);
                             dw3000 = receiving.finish_receiving().await.unwrap();
                             buffer.rx_meta.success = false;
+
+                            match e {
+                                dw3000_ng::Error::Spi(_) => {
+                                    buffer.rx_meta.error = Some(RxError::Spi)
+                                }
+                                dw3000_ng::Error::FrameWaitTimeout => {
+                                    buffer.rx_meta.error = Some(RxError::Timeout)
+                                }
+                                _ => buffer.rx_meta.error = Some(RxError::Phy),
+                            }
+
                             self.rx.send_done();
                             continue;
                         }

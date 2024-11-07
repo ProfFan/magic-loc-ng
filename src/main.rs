@@ -31,7 +31,7 @@ extern crate alloc;
 
 use defmt as _;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
-use embassy_executor::Spawner;
+use embassy_executor::{SendSpawner, Spawner};
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
@@ -217,6 +217,7 @@ async fn main(spawner: Spawner) {
 
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
     let config_store_ = config_store.clone();
+    static CPU1_SPAWNER: OnceLock<SendSpawner> = OnceLock::new();
     let cpu1_fnctn = move || {
         static EXECUTOR_CORE1: StaticCell<InterruptExecutor<2>> = StaticCell::new();
         let executor_core1 =
@@ -236,6 +237,8 @@ async fn main(spawner: Spawner) {
         static EXECUTOR: StaticCell<Executor> = StaticCell::new();
         let executor = EXECUTOR.init(Executor::new());
         executor.run(move |spawner| {
+            let _ = CPU1_SPAWNER.init(spawner.make_send());
+
             let dw_cs = io.pins.gpio8;
             let dw_rst = io.pins.gpio9;
             let dw_irq = io.pins.gpio15;
@@ -292,18 +295,6 @@ async fn main(spawner: Spawner) {
             UWB_DEVICE
                 .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
                 .unwrap();
-
-            // Start the ranging task
-            // spawner
-            //     .spawn(ranging::uwb_driver_task(
-            //         config_store_,
-            //         spi,
-            //         Output::new(dw_cs, Level::High),
-            //         Output::new(dw_rst, Level::High),
-            //         Input::new(dw_irq, Pull::Up),
-            //         dma_channel,
-            //     ))
-            //     .unwrap();
         });
     };
 
@@ -323,7 +314,11 @@ async fn main(spawner: Spawner) {
 
     // Start the interactive console
     spawner
-        .spawn(console::console(spawner, config_store.clone()))
+        .spawn(console::console(
+            spawner,
+            CPU1_SPAWNER.get().await.clone(),
+            config_store.clone(),
+        ))
         .unwrap();
 
     // A never-ending heartbeat

@@ -5,6 +5,7 @@
 use core::any::TypeId;
 
 use embassy_embedded_hal::adapter::{BlockingAsync, YieldingAsync};
+use esp_hal::macros::ram;
 use esp_storage::{FlashStorage, FlashStorageError};
 use sequential_storage::cache::KeyPointerCache;
 use sequential_storage::map::store_item;
@@ -72,6 +73,8 @@ impl ConfigurationStore {
         })
     }
 
+    /// Get the flash range for the configuration store
+    #[ram]
     fn flash_range(&self) -> core::ops::Range<u32> {
         self.storage_partition.offset
             ..self.storage_partition.offset + self.storage_partition.size as u32
@@ -87,6 +90,7 @@ impl ConfigurationStore {
     /// * `Ok(Some(T))` - The value was found and returned
     /// * `Ok(None)` - The value was not found
     /// * `Err(sequential_storage::Error<FlashStorageError>)` - An error occurred during the read operation
+    #[ram]
     pub async fn get<'b, T: Value<'b> + 'static>(
         &mut self,
         buffer: &'b mut [u8],
@@ -98,7 +102,7 @@ impl ConfigurationStore {
         }
 
         let mut storage = YieldingAsync::new(BlockingAsync::new(FlashStorage::new()));
-        fetch_item(
+        fetch_item::<_, T, _>(
             &mut storage,
             self.flash_range(),
             &mut self.cache,
@@ -118,6 +122,7 @@ impl ConfigurationStore {
     /// # Returns
     /// * `Ok(())` - The value was set
     /// * `Err(sequential_storage::Error<FlashStorageError>)` - An error occurred during the write operation
+    #[ram]
     pub async fn set<'a, T: Value<'a> + 'static>(
         &mut self,
         key: &KeyType,
@@ -132,7 +137,7 @@ impl ConfigurationStore {
 
         let mut storage = YieldingAsync::new(BlockingAsync::new(FlashStorage::new()));
         let mut buffer = [0; 256];
-        store_item(
+        store_item::<_, T, _>(
             &mut storage,
             self.flash_range(),
             &mut self.cache,

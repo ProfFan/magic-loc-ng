@@ -58,7 +58,7 @@ pub async fn imu_stream_task(
     wire_packet.origin = address.address().octets();
 
     let source_endpoint = embassy_net::IpEndpoint::new(address.address().into(), 50000);
-    let endpoint =
+    let broadcast_ep =
         embassy_net::IpEndpoint::new(embassy_net::IpAddress::v4(255, 255, 255, 255), 50001);
 
     if !stack.is_link_up() {
@@ -101,7 +101,10 @@ pub async fn imu_stream_task(
                 )
             };
 
-            socket.send_to(wire_packet_bytes, endpoint).await.unwrap();
+            socket
+                .send_to(wire_packet_bytes, broadcast_ep)
+                .await
+                .unwrap();
             records_written = 0;
         }
     }

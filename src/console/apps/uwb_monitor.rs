@@ -30,10 +30,24 @@ pub async fn uwb_monitor<'a>(
         };
         let packet = match select(uwb_device.rx.receive(), keyboard_event).await {
             Either::First(packet) => packet,
-            Either::Second(_) => return Ok(()),
+            Either::Second(_) => {
+                return Ok(());
+            }
         };
 
         defmt::trace!("UWB Packet: {:?}", packet);
+
+        if packet.rx_meta.success == false {
+            alloc::format!("Error: {:?}\n", packet.rx_meta.error)
+                .as_bytes()
+                .chunks(64)
+                .for_each(|c| {
+                    let _ = esp_fast_serial::write_to_usb_serial_buffer(c);
+                });
+
+            uwb_device.rx.receive_done();
+            continue;
+        }
 
         alloc::format!("Received: {:?}\n", packet)
             .as_bytes()

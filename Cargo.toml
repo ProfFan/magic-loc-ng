@@ -35,7 +35,7 @@ embedded-hal-async = "1.0.0"
 embedded-hal-bus = { version = "0.2", features = ["async"] }
 
 esp-wifi = { version = "0.10.*", default-features = false, features = [
-    "esp-now",
+    # "esp-now",
     "async",
     "sniffer",
     # "ps-min-modem",

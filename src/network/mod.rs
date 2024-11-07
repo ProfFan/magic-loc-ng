@@ -16,6 +16,7 @@ use embassy_executor::{task, Spawner};
 use esp_wifi_sys::include::{
     wifi_ap_config_t, wifi_auth_mode_t_WIFI_AUTH_WPA2_PSK,
     wifi_cipher_type_t_WIFI_CIPHER_TYPE_CCMP, wifi_config_t, wifi_pmf_config_t,
+    wifi_promiscuous_pkt_type_t_WIFI_PKT_DATA,
 };
 use ieee80211::{
     common::DataFrameSubtype,
@@ -100,6 +101,10 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
         RX_CHAN_SEND.get_or_init(|| Mutex::new(rx_send));
 
         self.sniffer.set_receive_cb(|packet| {
+            if packet.frame_type != wifi_promiscuous_pkt_type_t_WIFI_PKT_DATA {
+                return;
+            }
+
             let _ = match_frames! {
                 packet.data,
                 data = ieee80211::data_frame::DataFrame  => {
@@ -109,7 +114,7 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                         return;
                     }
 
-                    defmt::trace!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
+                    defmt::debug!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
 
                     let rx_chan_send = RX_CHAN_SEND.try_get().unwrap();
                     let mut rx_chan = rx_chan_send.try_lock().unwrap();
@@ -216,7 +221,7 @@ pub async fn wifi_driver_task(
         esp_wifi::wifi::Configuration::AccessPoint(esp_wifi::wifi::AccessPointConfiguration {
             ssid: "esp-wifi-1".try_into().unwrap(),
             ssid_hidden: true,
-            channel: 7,
+            channel: 11,
             protocols: Protocol::P802D11BGN.into(),
             auth_method: esp_wifi::wifi::AuthMethod::WPA2Personal,
             password: "do-not-conn3ct-to-me".try_into().unwrap(),
@@ -270,21 +275,23 @@ pub async fn wifi_driver_task(
             esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
             true,
         )
-    } != esp_wifi_sys::include::ESP_OK as i32
+    } == esp_wifi_sys::include::ESP_OK as i32
     {
+        defmt::info!("Set 11b rate to disabled");
+    } else {
         defmt::error!("Failed to set 11b rate");
     }
 
-    if unsafe {
-        esp_wifi_sys::include::esp_wifi_set_protocol(
-            esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
-            esp_wifi_sys::include::WIFI_PROTOCOL_11G as u8
-                | esp_wifi_sys::include::WIFI_PROTOCOL_11N as u8,
-        )
-    } != esp_wifi_sys::include::ESP_OK as i32
-    {
-        defmt::error!("Failed to set protocol to 802.11g/n");
-    }
+    // if unsafe {
+    //     esp_wifi_sys::include::esp_wifi_set_protocol(
+    //         esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
+    //         esp_wifi_sys::include::WIFI_PROTOCOL_11G as u8
+    //             | esp_wifi_sys::include::WIFI_PROTOCOL_11N as u8,
+    //     )
+    // } != esp_wifi_sys::include::ESP_OK as i32
+    // {
+    //     defmt::error!("Failed to set protocol to 802.11g/n");
+    // }
 
     wifi_ctl.start().await.unwrap();
 
@@ -304,13 +311,23 @@ pub async fn wifi_driver_task(
     if unsafe {
         esp_wifi_sys::include::esp_wifi_set_bandwidth(
             esp_wifi_sys::include::wifi_interface_t_WIFI_IF_AP,
-            esp_wifi_sys::include::wifi_bandwidth_t_WIFI_BW_HT40,
+            esp_wifi_sys::include::wifi_bandwidth_t_WIFI_BW_HT20,
         )
     } != esp_wifi_sys::include::ESP_OK as i32
     {
         defmt::error!("Failed to set bandwidth");
     } else {
-        defmt::info!("Set bandwidth to HT40");
+        defmt::info!("Set bandwidth to HT20");
+    }
+
+    // Get TX power
+    let mut tx_power = 0;
+    if unsafe { esp_wifi_sys::include::esp_wifi_get_max_tx_power(&mut tx_power) }
+        != esp_wifi_sys::include::ESP_OK as i32
+    {
+        defmt::error!("Failed to get TX power");
+    } else {
+        defmt::info!("TX power: {}", tx_power);
     }
 
     let sniffer = wifi_ctl.take_sniffer().unwrap();

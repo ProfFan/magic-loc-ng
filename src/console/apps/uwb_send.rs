@@ -2,7 +2,10 @@
 
 use core::mem::MaybeUninit;
 
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pipe::Reader};
+use alloc::sync::Arc;
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, pipe::Reader,
+};
 
 use crate::ranging::uwb_driver::{TxTiming, MTU_802154};
 
@@ -20,11 +23,15 @@ pub async fn uwb_send<'a>(
 
     let mut uwb_device = uwb_device.lock().await;
 
+    let tx_result = Arc::new(OnceLock::new());
+
     uwb_device
         .send_tx_request(|txr| {
             txr.tx_time = TxTiming::Now;
 
-            let frame_repr = Ieee802154Repr {
+            txr.tx_result = Some(tx_result.clone());
+
+            const FRAME_REPR: Ieee802154Repr = Ieee802154Repr {
                 frame_type: smoltcp::wire::Ieee802154FrameType::Data,
                 frame_version: smoltcp::wire::Ieee802154FrameVersion::Ieee802154_2006,
                 security_enabled: false,
@@ -38,7 +45,7 @@ pub async fn uwb_send<'a>(
                 dst_pan_id: None,
             };
 
-            // Safety: we know the buffer is at least as long as the expected length
+            // SAFETY: we will not read from the `[u8]` created from the `[MaybeUninit<u8>]`
             let mut frame = unsafe {
                 Ieee802154Frame::new_unchecked(core::mem::transmute::<
                     &mut [MaybeUninit<u8>; MTU_802154],
@@ -46,12 +53,16 @@ pub async fn uwb_send<'a>(
                 >(&mut txr.buf))
             };
 
-            frame_repr.emit(&mut frame);
+            FRAME_REPR.emit(&mut frame);
             frame.payload_mut().unwrap()[0..13].copy_from_slice(b"Hello, world!");
 
-            txr.len = frame_repr.buffer_len() + 13;
+            txr.len = FRAME_REPR.buffer_len() + 13;
         })
         .await;
+
+    let tx_result = tx_result.get().await;
+
+    defmt::info!("TX result: {:?}", tx_result);
 
     Ok(())
 }

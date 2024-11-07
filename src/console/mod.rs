@@ -1,6 +1,6 @@
 use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
-use embassy_executor::{task, Spawner};
+use embassy_executor::{task, SendSpawner, Spawner};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 
@@ -63,11 +63,20 @@ pub fn parse_arguments<'a>(command: &'a str) -> heapless::Vec<Token<'a>, 16> {
 }
 
 #[task]
+async fn test_cpu1() {
+    defmt::info!("Hello from CPU{}", esp_hal::get_core());
+}
+
+#[task]
 pub async fn console(
     spawner: Spawner,
+    spawner_cpu1: SendSpawner,
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
 ) {
     let serial_in = esp_fast_serial::reader_take();
+
+    // Spawn a task on CPU1
+    spawner_cpu1.spawn(test_cpu1()).unwrap();
 
     const PROMPT: &[u8] = b"(ml)> ";
 
