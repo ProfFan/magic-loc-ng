@@ -158,6 +158,12 @@ pub async fn console(
                 "uwb_send" => {
                     let _ = apps::uwb_send(&serial_in, &tokens).await;
                 }
+                "uwb_master" => {
+                    let _ = apps::uwb_master(spawner_cpu1, &tokens).await;
+                }
+                "uwb_client" => {
+                    let _ = apps::uwb_client(spawner_cpu1, &tokens).await;
+                }
                 "reset" => {
                     let _ = apps::reset(&tokens).await;
                 }

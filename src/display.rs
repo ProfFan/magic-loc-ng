@@ -2,7 +2,7 @@ use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::{Instant, Timer};
 use embedded_hal_async::i2c::I2c as _;
-use esp_hal::{i2c::I2c, peripherals::I2C1, Async};
+use esp_hal::{i2c::master::I2c, peripherals::I2C1, Async};
 
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
@@ -17,7 +17,7 @@ use ssd1306::{prelude::*, Ssd1306Async};
 
 #[embassy_executor::task]
 pub async fn display_task(
-    mut i2c_dev: I2cDevice<'static, NoopRawMutex, I2c<'static, I2C1, Async>>,
+    mut i2c_dev: I2cDevice<'static, NoopRawMutex, I2c<'static, Async, I2C1>>,
 ) {
     if i2c_dev.read(0x3C, &mut [0u8; 1]).await.is_err() {
         defmt::error!("Failed to read from I2C device, display not connected?");

@@ -455,7 +455,7 @@ impl<'d, const MTU: usize> Device<'d, MTU> {
     }
 
     /// Send a TX request
-    pub async fn send_tx_request<F: FnOnce(&mut UwbPacketTxRequest<MTU>)>(&mut self, f: F) {
+    pub async fn send_uwb_tx_request<F: FnOnce(&mut UwbPacketTxRequest<MTU>)>(&mut self, f: F) {
         let buffer = self.tx.send().await;
         *buffer = UwbRequest::Tx(UwbPacketTxRequest::<MTU>::new());
         let UwbRequest::Tx(ref mut tx_request) = buffer else {

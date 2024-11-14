@@ -30,7 +30,7 @@ use static_cell::StaticCell;
 extern crate alloc;
 
 use defmt as _;
-use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
+use embassy_embedded_hal::shared_bus::asynch::{i2c::I2cDevice, spi::SpiDevice};
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -45,12 +45,12 @@ use esp_hal::{
     rng::Rng,
     spi::{
         master::{Spi, SpiDmaBus},
-        FullDuplexMode, SpiMode,
+        SpiMode,
     },
     timer::{timg::TimerGroup, AnyTimer, OneShotTimer},
     Async,
 };
-use esp_wifi::{self, EspWifiInitFor};
+use esp_wifi::{self};
 
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
@@ -64,6 +64,26 @@ static IMU_PUBSUB: OnceLock<
         1,
     >,
 > = OnceLock::new();
+
+struct Dw3000Device {
+    spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Async>, Output<'static>>,
+    rst: Output<'static>,
+    irq: Input<'static>,
+}
+
+impl Dw3000Device {
+    pub fn split_borrow(
+        &mut self,
+    ) -> (
+        &mut SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Async>, Output<'static>>,
+        &mut Output<'static>,
+        &mut Input<'static>,
+    ) {
+        (&mut self.spi, &mut self.rst, &mut self.irq)
+    }
+}
+
+static DW3000: OnceLock<Mutex<CriticalSectionRawMutex, Dw3000Device>> = OnceLock::new();
 
 static UWB_DEVICE: OnceLock<
     Mutex<CriticalSectionRawMutex, ranging::uwb_driver::Device<'static, 127>>,
@@ -122,12 +142,11 @@ async fn main(spawner: Spawner) {
         .spawn(esp_fast_serial::serial_comm_task(peripherals.USB_DEVICE))
         .unwrap();
 
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
-    let sclk = io.pins.gpio33;
-    let mosi = io.pins.gpio40;
-    let miso = io.pins.gpio47;
-    let imu_cs = io.pins.gpio34;
-    let baro_cs = io.pins.gpio11;
+    let sclk = peripherals.GPIO33;
+    let mosi = peripherals.GPIO40;
+    let miso = peripherals.GPIO47;
+    let imu_cs = peripherals.GPIO34;
+    let baro_cs = peripherals.GPIO11;
 
     // Prevent the barometer from operating in I2C mode
     let mut baro_cs = Output::new(baro_cs, Level::High);
@@ -143,8 +162,7 @@ async fn main(spawner: Spawner) {
     // let wifi_timer = PeriodicTimer::new(timg0.timer0.into());
 
     let wifi = peripherals.WIFI;
-    let init = esp_wifi::init(
-        EspWifiInitFor::Wifi,
+    let controller = esp_wifi::init(
         timg1.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
@@ -154,7 +172,7 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(network::wifi_driver_task(
             config_store.clone(),
-            init,
+            controller,
             wifi,
             spawner,
         ))
@@ -163,10 +181,19 @@ async fn main(spawner: Spawner) {
     Timer::after_secs(1).await;
 
     // --- BMS ---
-    let bms_sda = io.pins.gpio1;
-    let bms_scl = io.pins.gpio2;
+    let bms_sda = peripherals.GPIO1;
+    let bms_scl = peripherals.GPIO2;
 
-    let mut bms_i2c = esp_hal::i2c::I2c::new_async(peripherals.I2C0, bms_sda, bms_scl, 100.kHz());
+    let mut bms_i2c = esp_hal::i2c::master::I2c::new_typed(
+        peripherals.I2C0,
+        esp_hal::i2c::master::Config {
+            frequency: 100.kHz(),
+            ..Default::default()
+        },
+    )
+    .with_sda(bms_sda)
+    .with_scl(bms_scl)
+    .into_async();
     let mut reg07 = [0u8; 1];
 
     // Register 0x07, 1 byte
@@ -178,18 +205,24 @@ async fn main(spawner: Spawner) {
         .ok();
 
     // --- Display ---
-    let display_sda = io.pins.gpio6;
-    let display_scl = io.pins.gpio7;
+    let display_sda = peripherals.GPIO6;
+    let display_scl = peripherals.GPIO7;
 
     static I2C1: StaticCell<
-        Mutex<NoopRawMutex, esp_hal::i2c::I2c<'static, esp_hal::peripherals::I2C1, Async>>,
+        Mutex<NoopRawMutex, esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C1>>,
     > = StaticCell::new();
-    let i2c1 = I2C1.init(Mutex::<NoopRawMutex, _>::new(esp_hal::i2c::I2c::new_async(
-        peripherals.I2C1,
-        display_sda,
-        display_scl,
-        400.kHz(),
-    )));
+    let i2c1 = I2C1.init(Mutex::<NoopRawMutex, _>::new(
+        esp_hal::i2c::master::I2c::new_typed(
+            peripherals.I2C1,
+            esp_hal::i2c::master::Config {
+                frequency: 400.kHz(),
+                ..Default::default()
+            },
+        )
+        .with_sda(display_sda)
+        .with_scl(display_scl)
+        .into_async(),
+    ));
 
     // Scan I2C bus
     let display_i2c = I2cDevice::new(i2c1);
@@ -200,10 +233,17 @@ async fn main(spawner: Spawner) {
     let dma = Dma::new(peripherals.DMA);
     let dma_channel = dma.channel0;
 
-    let spi = Spi::new(peripherals.SPI2, 24.MHz(), SpiMode::Mode0)
-        .with_sck(sclk)
-        .with_miso(miso)
-        .with_mosi(mosi);
+    let spi = Spi::new_typed_with_config(
+        peripherals.SPI2,
+        esp_hal::spi::master::Config {
+            frequency: 24.MHz(),
+            mode: SpiMode::Mode0,
+            ..Default::default()
+        },
+    )
+    .with_sck(sclk)
+    .with_miso(miso)
+    .with_mosi(mosi);
 
     let imu_pubsub_ = embassy_sync::pubsub::PubSubChannel::<
         CriticalSectionRawMutex,
@@ -239,18 +279,25 @@ async fn main(spawner: Spawner) {
         executor.run(move |spawner| {
             let _ = CPU1_SPAWNER.init(spawner.make_send());
 
-            let dw_cs = io.pins.gpio8;
-            let dw_rst = io.pins.gpio9;
-            let dw_irq = io.pins.gpio15;
+            let dw_cs = peripherals.GPIO8;
+            let dw_rst = peripherals.GPIO9;
+            let dw_irq = peripherals.GPIO15;
 
-            let dw_sclk = io.pins.gpio36;
-            let dw_mosi = io.pins.gpio35;
-            let dw_miso = io.pins.gpio37;
+            let dw_sclk = peripherals.GPIO36;
+            let dw_mosi = peripherals.GPIO35;
+            let dw_miso = peripherals.GPIO37;
 
-            let spi = Spi::new(peripherals.SPI3, 24.MHz(), SpiMode::Mode0)
-                .with_sck(dw_sclk)
-                .with_miso(dw_miso)
-                .with_mosi(dw_mosi);
+            let spi = Spi::new_with_config(
+                peripherals.SPI3,
+                esp_hal::spi::master::Config {
+                    frequency: 24.MHz(),
+                    mode: SpiMode::Mode0,
+                    ..Default::default()
+                },
+            )
+            .with_sck(dw_sclk)
+            .with_miso(dw_miso)
+            .with_mosi(dw_mosi);
 
             let dma_channel = dma.channel1;
 
@@ -259,42 +306,47 @@ async fn main(spawner: Spawner) {
             let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
             let bus = spi
-                .with_dma(dma_channel.configure_for_async(false, DmaPriority::Priority0))
-                .with_buffers(dma_rx_buf, dma_tx_buf);
+                .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
+                .with_buffers(dma_rx_buf, dma_tx_buf)
+                .into_async();
 
-            static BUS: StaticCell<
-                Mutex<
-                    NoopRawMutex,
-                    SpiDmaBus<'static, esp_hal::peripherals::SPI3, FullDuplexMode, Async>,
-                >,
-            > = StaticCell::new();
+            static BUS: StaticCell<Mutex<NoopRawMutex, SpiDmaBus<'static, Async>>> =
+                StaticCell::new();
             let bus: &'static Mutex<_, _> = BUS.init_with(|| Mutex::<NoopRawMutex, _>::new(bus));
 
             let dw_rst = Output::new(dw_rst, Level::High);
             let dw_irq = Input::new(dw_irq, Pull::Up);
             let dw_cs = Output::new(dw_cs, Level::High);
 
-            static SPI_DEV: StaticCell<
-                embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice<
-                    'static,
-                    NoopRawMutex,
-                    SpiDmaBus<'static, SPI3, FullDuplexMode, Async>,
-                    Output<'static>,
-                >,
-            > = StaticCell::new();
-            let spi_dev = SPI_DEV
-                .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs));
+            // static SPI_DEV: StaticCell<
+            //     embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice<
+            //         'static,
+            //         NoopRawMutex,
+            //         SpiDmaBus<'static, Async>,
+            //         Output<'static>,
+            //     >,
+            // > = StaticCell::new();
+            // let spi_dev = SPI_DEV
+            //     .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs));
 
-            static STATE: StaticCell<ranging::uwb_driver::State<127, 1, 1>> = StaticCell::new();
-            let state = STATE.init(ranging::uwb_driver::State::<127, 1, 1>::new());
+            DW3000
+                .init(Mutex::<_, _>::new(Dw3000Device {
+                    spi: embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs),
+                    rst: dw_rst,
+                    irq: dw_irq,
+                }))
+                .unwrap_or(());
 
-            let (uwb_runner, uwb_device) = ranging::uwb_driver::new(state, spi_dev, dw_rst, dw_irq);
+            // static STATE: StaticCell<ranging::uwb_driver::State<127, 1, 1>> = StaticCell::new();
+            // let state = STATE.init(ranging::uwb_driver::State::<127, 1, 1>::new());
 
-            spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
+            // let (uwb_runner, uwb_device) = ranging::uwb_driver::new(state, spi_dev, dw_rst, dw_irq);
 
-            UWB_DEVICE
-                .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
-                .unwrap();
+            // spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
+
+            // UWB_DEVICE
+            //     .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
+            //     .unwrap();
         });
     };
 
@@ -307,7 +359,7 @@ async fn main(spawner: Spawner) {
         )
         .unwrap();
 
-    let led = io.pins.gpio5;
+    let led = peripherals.GPIO5;
     spawner
         .spawn(indicator::control_led(Output::new(led, Level::Low)))
         .ok();

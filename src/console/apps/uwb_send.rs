@@ -26,7 +26,7 @@ pub async fn uwb_send<'a>(
     let tx_result = Arc::new(OnceLock::new());
 
     uwb_device
-        .send_tx_request(|txr| {
+        .send_uwb_tx_request(|txr| {
             txr.tx_time = TxTiming::Now;
 
             txr.tx_result = Some(tx_result.clone());

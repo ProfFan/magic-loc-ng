@@ -10,7 +10,7 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
-use esp_wifi::{self, wifi::Protocol, EspWifiInitialization};
+use esp_wifi::{self, wifi::Protocol, EspWifiController};
 
 use embassy_executor::{task, Spawner};
 use esp_wifi_sys::include::{
@@ -210,12 +210,12 @@ pub static WIFI_STACK: OnceLock<embassy_net::Stack<'static>> = OnceLock::new();
 #[ram]
 pub async fn wifi_driver_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
-    wifi_init: EspWifiInitialization,
+    wifi_ctrl: EspWifiController<'static>,
     wifi_dev: esp_hal::peripherals::WIFI,
     spawner: Spawner,
 ) {
     let (_wifi_device, mut wifi_ctl) =
-        esp_wifi::wifi::new_with_mode(&wifi_init, wifi_dev, esp_wifi::wifi::WifiApDevice).unwrap();
+        esp_wifi::wifi::new_with_mode(&wifi_ctrl, wifi_dev, esp_wifi::wifi::WifiApDevice).unwrap();
 
     let ap_config =
         esp_wifi::wifi::Configuration::AccessPoint(esp_wifi::wifi::AccessPointConfiguration {
@@ -293,7 +293,7 @@ pub async fn wifi_driver_task(
     //     defmt::error!("Failed to set protocol to 802.11g/n");
     // }
 
-    wifi_ctl.start().await.unwrap();
+    wifi_ctl.start().unwrap();
 
     if unsafe {
         esp_wifi_sys::include::esp_wifi_config_80211_tx_rate(
