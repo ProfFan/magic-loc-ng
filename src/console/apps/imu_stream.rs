@@ -3,6 +3,7 @@ use core::sync::atomic::AtomicBool;
 use crate::hist_buffer::HistoryBuffer;
 use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, signal::Signal};
+use esp_hal::macros::ram;
 
 use super::Token;
 
@@ -37,14 +38,14 @@ impl defmt::Format for IMUPacket {
 
 /// IMU streaming application
 #[embassy_executor::task]
-#[esp_hal::macros::ram]
+#[ram]
 pub async fn imu_stream_task(
     stop_signal: &'static Signal<NoopRawMutex, bool>,
     stopped_signal: &'static AtomicBool,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
-    let mut imu_sub = IMU_PUBSUB.get().await.receiver();
+    let imu_sub = IMU_PUBSUB.get().await.receiver();
 
     let mut wire_packet = IMUPacket {
         header: *b"MIMU",

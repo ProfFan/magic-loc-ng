@@ -15,6 +15,7 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
+use esp_hal::macros::ram;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{
@@ -32,6 +33,7 @@ use crate::{
 /// - Sending timeslice requests to the UWB master
 /// - If allocated, sending response packets to the master
 #[embassy_executor::task]
+#[ram]
 pub async fn uwb_client_task(
     stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
@@ -55,7 +57,7 @@ pub async fn uwb_client_task(
 
     let dw3000 = dw3000_ng::DW3000::new(spi);
 
-    let dw3000 = dw3000.init().await.unwrap();
+    let dw3000 = dw3000.init().unwrap();
 
     let dwm_config = dw3000_ng::Config {
         bitrate: dw3000_ng::configs::BitRate::Kbps6800,
@@ -65,38 +67,29 @@ pub async fn uwb_client_task(
         ..Default::default()
     };
 
-    let mut dw3000 = dw3000
-        .config(dwm_config, embassy_time::Delay)
-        .await
-        .unwrap();
+    let mut dw3000 = dw3000.config(dwm_config, embassy_time::Delay).unwrap();
 
     defmt::info!("DW3000 Initialized!");
 
-    dw3000.gpio_config(ConfigGPIOs::enable_led()).await.unwrap();
+    dw3000.gpio_config(ConfigGPIOs::enable_led()).unwrap();
     dw3000
         .ll()
         .led_ctrl()
         .modify(|_, w| w.blink_tim(0x2))
-        .await
         .unwrap();
 
     // Enable Super Deterministic Code (SDC)
-    dw3000
-        .ll()
-        .sys_cfg()
-        .modify(|_, w| w.cp_sdc(0x1))
-        .await
-        .unwrap();
+    dw3000.ll().sys_cfg().modify(|_, w| w.cp_sdc(0x1)).unwrap();
 
     Timer::after(Duration::from_millis(200)).await;
 
     // Disable SPIRDY interrupt
-    dw3000.disable_interrupts().await.unwrap();
-    dw3000.enable_tx_interrupts().await.unwrap();
-    dw3000.enable_rx_interrupts().await.unwrap();
+    dw3000.disable_interrupts().unwrap();
+    dw3000.enable_tx_interrupts().unwrap();
+    dw3000.enable_rx_interrupts().unwrap();
 
     // Read DW3000 Device ID
-    let dev_id = dw3000.ll().dev_id().read().await.unwrap();
+    let dev_id = dw3000.ll().dev_id().read().unwrap();
 
     if dev_id.model() != 0x03 {
         defmt::error!("Invalid DW3000 model: {:#x}", dev_id.model());
@@ -113,22 +106,20 @@ pub async fn uwb_client_task(
 
         // Wait for the **master** to send the poll packet
 
-        let mut receiving = dw3000.receive(dwm_config).await.unwrap();
+        let mut receiving = dw3000.receive(dwm_config).unwrap();
 
         let mut buffer = [0; 128];
         let (len, rxts_poll, quality): (usize, DwInstant, RxQuality) =
-            match nonblocking_wait_async(async || receiving.r_wait_buf(&mut buffer).await, irq)
-                .await
-            {
+            match nonblocking_wait_async(async || receiving.r_wait_buf(&mut buffer), irq).await {
                 Ok(r) => r,
                 _ => {
                     defmt::error!("Error receiving packet");
-                    dw3000 = receiving.finish_receiving().await.unwrap();
+                    dw3000 = receiving.finish_receiving().unwrap();
                     continue;
                 }
             };
 
-        dw3000 = receiving.finish_receiving().await.unwrap();
+        dw3000 = receiving.finish_receiving().unwrap();
 
         // Parse the poll packet
         let frame = match Ieee802154Frame::new_checked(&buffer[..len]) {
@@ -213,19 +204,18 @@ pub async fn uwb_client_task(
                 SendTime::Delayed(response_txtime),
                 &dwm_config,
             )
-            .await
             .unwrap();
 
         let send_result: Result<DwInstant, dw3000_ng::Error<_>> =
-            nonblocking_wait_async(async || sending.s_wait().await, irq).await;
+            nonblocking_wait_async(async || sending.s_wait(), irq).await;
 
         if let Err(e) = send_result {
             defmt::error!("Error sending response packet: {:?}", e);
-            dw3000 = sending.finish_sending().await.unwrap();
+            dw3000 = sending.finish_sending().unwrap();
             continue;
         }
 
-        dw3000 = sending.finish_sending().await.unwrap();
+        dw3000 = sending.finish_sending().unwrap();
     }
 
     defmt::info!("UWB client stopped");

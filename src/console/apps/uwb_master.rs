@@ -65,9 +65,11 @@ pub async fn uwb_master_task(
 
     defmt::info!("DW3000 Reset!");
 
+    Timer::after(Duration::from_millis(200)).await;
+
     let dw3000 = dw3000_ng::DW3000::new(spi);
 
-    let dw3000 = dw3000.init().await.unwrap();
+    let dw3000 = dw3000.init().unwrap();
 
     let dwm_config = dw3000_ng::Config {
         bitrate: dw3000_ng::configs::BitRate::Kbps6800,
@@ -77,38 +79,29 @@ pub async fn uwb_master_task(
         ..Default::default()
     };
 
-    let mut dw3000 = dw3000
-        .config(dwm_config, embassy_time::Delay)
-        .await
-        .unwrap();
+    let mut dw3000 = dw3000.config(dwm_config, embassy_time::Delay).unwrap();
 
     defmt::info!("DW3000 Initialized!");
 
-    dw3000.gpio_config(ConfigGPIOs::enable_led()).await.unwrap();
+    dw3000.gpio_config(ConfigGPIOs::enable_led()).unwrap();
     dw3000
         .ll()
         .led_ctrl()
         .modify(|_, w| w.blink_tim(0x2))
-        .await
         .unwrap();
 
     // Enable Super Deterministic Code (SDC)
-    dw3000
-        .ll()
-        .sys_cfg()
-        .modify(|_, w| w.cp_sdc(0x1))
-        .await
-        .unwrap();
+    dw3000.ll().sys_cfg().modify(|_, w| w.cp_sdc(0x1)).unwrap();
 
     Timer::after(Duration::from_millis(200)).await;
 
     // Disable SPIRDY interrupt
-    dw3000.disable_interrupts().await.unwrap();
-    dw3000.enable_tx_interrupts().await.unwrap();
-    dw3000.enable_rx_interrupts().await.unwrap();
+    dw3000.disable_interrupts().unwrap();
+    dw3000.enable_tx_interrupts().unwrap();
+    dw3000.enable_rx_interrupts().unwrap();
 
     // Read DW3000 Device ID
-    let dev_id = dw3000.ll().dev_id().read().await.unwrap();
+    let dev_id = dw3000.ll().dev_id().read().unwrap();
 
     if dev_id.model() != 0x03 {
         defmt::error!("Invalid DW3000 model: {:#x}", dev_id.model());
@@ -148,7 +141,7 @@ pub async fn uwb_master_task(
         FRAME_REPR.emit(&mut frame);
 
         let current_dw_time: DwInstant =
-            DwInstant::new((dw3000.sys_time().await.unwrap() as u64) << 8).unwrap();
+            DwInstant::new((dw3000.sys_time().unwrap() as u64) << 8).unwrap();
         let send_time = current_dw_time + DwDuration::from_nanos(1500000); // 1.5ms
         let send_time = DwInstant::new(send_time.value() >> 9 << 9).unwrap();
 
@@ -162,29 +155,28 @@ pub async fn uwb_master_task(
 
         let mut sending = dw3000
             .send_raw(&buffer[..len], SendTime::Delayed(send_time), &dwm_config)
-            .await
             .unwrap();
 
         let send_result: Result<DwInstant, dw3000_ng::Error<_>> =
-            nonblocking_wait_async(async || sending.s_wait().await, irq).await;
+            nonblocking_wait_async(async || sending.s_wait(), irq).await;
 
         if let Err(e) = send_result {
             defmt::error!("Error waiting for send: {:?}", e);
-            dw3000 = sending.finish_sending().await.unwrap();
+            dw3000 = sending.finish_sending().unwrap();
             continue;
         }
 
         defmt::info!("Sent poll with time {:?}", send_result.unwrap());
 
-        dw3000 = sending.finish_sending().await.unwrap();
+        dw3000 = sending.finish_sending().unwrap();
 
         // Wait for responses for up to 90ms
         loop {
-            let mut receiving = dw3000.receive(dwm_config).await.unwrap();
+            let mut receiving = dw3000.receive(dwm_config).unwrap();
 
             let mut buffer = [0u8; 127];
             let receive_fut =
-                nonblocking_wait_async(async || receiving.r_wait_buf(&mut buffer).await, irq);
+                nonblocking_wait_async(async || receiving.r_wait_buf(&mut buffer), irq);
 
             let race = select(receive_fut, Timer::at(timeout)).await;
 
@@ -192,11 +184,11 @@ pub async fn uwb_master_task(
                 Either::First(receive_result) => receive_result,
                 Either::Second(_) => {
                     defmt::info!("Timeout waiting for response");
-                    dw3000 = receiving.finish_receiving().await.unwrap();
+                    dw3000 = receiving.finish_receiving().unwrap();
                     break;
                 }
             };
-            dw3000 = receiving.finish_receiving().await.unwrap();
+            dw3000 = receiving.finish_receiving().unwrap();
 
             let (len, rx_time, quality) = match result {
                 Ok(result) => result,

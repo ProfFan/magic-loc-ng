@@ -5,9 +5,9 @@ use esp_hal::{self, gpio::Level};
 /// duration of time.
 #[embassy_executor::task]
 pub async fn control_led(mut led: esp_hal::gpio::Output<'static>) {
-    defmt::debug!(
+    defmt::info!(
         "Starting control_led() on core {}",
-        esp_hal::get_core() as usize
+        esp_hal::Cpu::current() as usize
     );
 
     let duration = Duration::from_hz(1);

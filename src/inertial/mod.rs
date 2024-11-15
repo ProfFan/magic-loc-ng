@@ -8,6 +8,7 @@ use embassy_sync::pubsub::Publisher;
 use embassy_time::{Delay, Duration, Ticker, Timer};
 use esp_hal::dma::{DmaPriority, DmaRxBuf, DmaTxBuf};
 use esp_hal::gpio::Output;
+use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
 use esp_hal::{dma, dma_buffers, Blocking};
@@ -15,6 +16,7 @@ use esp_hal::{dma, dma_buffers, Blocking};
 use crate::configuration::ConfigurationStore;
 
 #[embassy_executor::task]
+#[ram]
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,

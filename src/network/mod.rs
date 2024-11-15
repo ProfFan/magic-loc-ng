@@ -336,7 +336,7 @@ pub async fn wifi_driver_task(
 
     let chip_mac = {
         let mut mac = [0u8; 6];
-        esp_wifi::wifi::get_sta_mac(&mut mac);
+        esp_wifi::wifi::sta_mac(&mut mac);
         mac
     };
 

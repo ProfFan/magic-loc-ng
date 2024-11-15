@@ -64,7 +64,7 @@ pub fn parse_arguments<'a>(command: &'a str) -> heapless::Vec<Token<'a>, 16> {
 
 #[task]
 async fn test_cpu1() {
-    defmt::info!("Hello from CPU{}", esp_hal::get_core());
+    defmt::info!("Hello from CPU{}", esp_hal::Cpu::current());
 }
 
 #[task]
@@ -152,12 +152,12 @@ pub async fn console(
                 "imu_recv" => {
                     let _ = apps::imu_recv(spawner, &tokens).await;
                 }
-                "uwb_monitor" => {
-                    let _ = apps::uwb_monitor(&serial_in, &tokens).await;
-                }
-                "uwb_send" => {
-                    let _ = apps::uwb_send(&serial_in, &tokens).await;
-                }
+                // "uwb_monitor" => {
+                //     let _ = apps::uwb_monitor(&serial_in, &tokens).await;
+                // }
+                // "uwb_send" => {
+                //     let _ = apps::uwb_send(&serial_in, &tokens).await;
+                // }
                 "uwb_master" => {
                     let _ = apps::uwb_master(spawner_cpu1, &tokens).await;
                 }

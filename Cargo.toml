@@ -12,9 +12,9 @@ esp-wifi-sys = { version = "0.6.*" }
 icm426xx = { version = "0.2.*", default-features = false, path = "../icm426xx", features = [
     # "async",
 ] }
-dw3000-ng = { package = "dw3000-ng", version = "1.0.0", features = [
+dw3000-ng = { package = "dw3000-ng", version = "1.0.0", default-features = false, features = [
     "defmt",
-    "async",
+    # "async",
 ] }
 magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
@@ -165,14 +165,14 @@ default = ["esp32s3"]
 partition_table = "partitions.csv"
 
 [patch.crates-io]
-esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-println" }
-esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-backtrace" }
-esp-wifi = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-wifi" }
+esp-println = { path = "../esp-hal/esp-println", package = "esp-println" }
+esp-backtrace = { path = "../esp-hal/esp-backtrace", package = "esp-backtrace" }
+esp-wifi = { path = "../esp-hal/esp-wifi", package = "esp-wifi" }
 esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "a3e2ed64e9095f120bbcebe6287ddf62760774db", package = "esp-wifi-sys" }
-esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-hal" }
-esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-hal-embassy" }
-esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-metadata" }
-esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-alloc" }
+esp-hal = { path = "../esp-hal/esp-hal", package = "esp-hal" }
+esp-hal-embbassy = { path = "../esp-hal/esp-hal-embassy", package = "esp-hal-embassy" }
+esp-metadata = { path = "../esp-hal/esp-metadata", package = "esp-metadata" }
+esp-alloc = { path = "../esp-hal/esp-alloc", package = "esp-alloc" }
 embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-net" }
 embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-time" }
 embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-time-driver" }

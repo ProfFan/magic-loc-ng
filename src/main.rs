@@ -19,6 +19,8 @@ mod network;
 mod ranging;
 mod utils;
 
+use core::cell::RefCell;
+
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     mutex::Mutex,
@@ -30,7 +32,7 @@ use static_cell::StaticCell;
 extern crate alloc;
 
 use defmt as _;
-use embassy_embedded_hal::shared_bus::asynch::{i2c::I2cDevice, spi::SpiDevice};
+use embassy_embedded_hal::shared_bus::{asynch::i2c::I2cDevice, blocking::spi::SpiDevice};
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -51,7 +53,7 @@ use esp_hal::{
         timg::TimerGroup,
         AnyTimer, OneShotTimer,
     },
-    Async,
+    Async, Blocking,
 };
 use esp_wifi::{self};
 
@@ -63,7 +65,7 @@ static IMU_PUBSUB: OnceLock<
 > = OnceLock::new();
 
 struct Dw3000Device {
-    spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Async>, Output<'static>>,
+    spi: SpiDevice<'static, NoopRawMutex, Spi<'static, Blocking>, Output<'static>>,
     rst: Output<'static>,
     irq: Input<'static>,
 }
@@ -72,7 +74,7 @@ impl Dw3000Device {
     pub fn split_borrow(
         &mut self,
     ) -> (
-        &mut SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Async>, Output<'static>>,
+        &mut SpiDevice<'static, NoopRawMutex, Spi<'static, Blocking>, Output<'static>>,
         &mut Output<'static>,
         &mut Input<'static>,
     ) {
@@ -82,9 +84,9 @@ impl Dw3000Device {
 
 static DW3000: OnceLock<Mutex<CriticalSectionRawMutex, Dw3000Device>> = OnceLock::new();
 
-static UWB_DEVICE: OnceLock<
-    Mutex<CriticalSectionRawMutex, ranging::uwb_driver::Device<'static, 127>>,
-> = OnceLock::new();
+// static UWB_DEVICE: OnceLock<
+//     Mutex<CriticalSectionRawMutex, ranging::uwb_driver::Device<'static, 127>>,
+// > = OnceLock::new();
 
 #[main]
 async fn main(spawner: Spawner) {
@@ -302,20 +304,22 @@ async fn main(spawner: Spawner) {
             .with_miso(dw_miso)
             .with_mosi(dw_mosi);
 
-            let dma_channel = dma.channel1;
+            // let dma_channel = dma.channel1;
 
-            let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
-            let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-            let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+            // let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
+            // let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+            // let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
-            let bus = spi
-                .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
-                .with_buffers(dma_rx_buf, dma_tx_buf)
-                .into_async();
+            let bus = RefCell::new(spi);
+            // .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
+            // .with_buffers(dma_rx_buf, dma_tx_buf)
+            // .into_async();
 
-            static BUS: StaticCell<Mutex<NoopRawMutex, SpiDmaBus<'static, Async>>> =
-                StaticCell::new();
-            let bus: &'static Mutex<_, _> = BUS.init_with(|| Mutex::<NoopRawMutex, _>::new(bus));
+            static BUS: StaticCell<
+                embassy_sync::blocking_mutex::Mutex<NoopRawMutex, RefCell<Spi<'static, Blocking>>>,
+            > = StaticCell::new();
+            let bus: &'static embassy_sync::blocking_mutex::Mutex<_, _> =
+                BUS.init_with(|| embassy_sync::blocking_mutex::Mutex::<NoopRawMutex, _>::new(bus));
 
             let dw_rst = Output::new(dw_rst, Level::High);
             let dw_irq = Input::new(dw_irq, Pull::Up);
@@ -334,7 +338,9 @@ async fn main(spawner: Spawner) {
 
             DW3000
                 .init(Mutex::<_, _>::new(Dw3000Device {
-                    spi: embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs),
+                    spi: embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice::new(
+                        bus, dw_cs,
+                    ),
                     rst: dw_rst,
                     irq: dw_irq,
                 }))
