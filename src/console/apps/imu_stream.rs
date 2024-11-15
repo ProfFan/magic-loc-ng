@@ -2,14 +2,13 @@ use core::sync::atomic::AtomicBool;
 
 use crate::hist_buffer::HistoryBuffer;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select, Either};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, signal::Signal};
 
 use super::Token;
 
 use crate::IMU_PUBSUB;
 
-const IMU_PACKET_HISTORY_SIZE: usize = 10;
+const IMU_PACKET_HISTORY_SIZE: usize = 30;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -38,13 +37,14 @@ impl defmt::Format for IMUPacket {
 
 /// IMU streaming application
 #[embassy_executor::task]
+#[esp_hal::macros::ram]
 pub async fn imu_stream_task(
     stop_signal: &'static Signal<NoopRawMutex, bool>,
     stopped_signal: &'static AtomicBool,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
-    let mut imu_sub = IMU_PUBSUB.get().await.subscriber().unwrap();
+    let mut imu_sub = IMU_PUBSUB.get().await.receiver();
 
     let mut wire_packet = IMUPacket {
         header: *b"MIMU",
@@ -85,16 +85,17 @@ pub async fn imu_stream_task(
     let mut records_written = 0;
 
     loop {
-        let imu_packet = match select(imu_sub.next_message_pure(), stop_signal.wait()).await {
-            Either::First(p) => p,
-            Either::Second(_) => break,
-        };
+        if stop_signal.signaled() {
+            break;
+        }
+
+        let imu_packet = imu_sub.receive().await;
 
         wire_packet.timestamp = embassy_time::Instant::now().as_micros();
         wire_packet.packets.write(imu_packet);
         records_written += 1;
 
-        if records_written >= IMU_PACKET_HISTORY_SIZE / 2 {
+        if records_written >= IMU_PACKET_HISTORY_SIZE / 3 {
             let wire_packet_bytes = unsafe {
                 core::mem::transmute::<&IMUPacket, &[u8; core::mem::size_of::<IMUPacket>()]>(
                     &wire_packet,

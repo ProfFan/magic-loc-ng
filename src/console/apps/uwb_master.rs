@@ -15,6 +15,7 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
+use esp_hal::macros::ram;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{console::Token, utils::nonblocking_wait_async};
@@ -46,6 +47,7 @@ pub struct UwbClientResponse {
 ///
 /// The master application runs on core 1.
 #[embassy_executor::task]
+#[ram]
 pub async fn uwb_master_task(
     stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
@@ -213,7 +215,7 @@ pub async fn uwb_master_task(
                 }
             };
 
-            let (payload, crc) = frame
+            let (payload, _fcs) = frame
                 .payload()
                 .unwrap()
                 .split_last_chunk::<2>()
@@ -221,7 +223,7 @@ pub async fn uwb_master_task(
 
             let uwb_client_response: &UwbClientResponse = match bytemuck::try_from_bytes(payload) {
                 Ok(uwb_client_response) => uwb_client_response,
-                Err(e) => {
+                Err(_e) => {
                     defmt::error!("Received invalid payload: {:?}", payload);
                     continue;
                 }

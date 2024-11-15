@@ -6,6 +6,7 @@ use core::ptr;
 use core::slice;
 
 use bytemuck::offset_of;
+use bytemuck::AnyBitPattern;
 
 /// A "history buffer", similar to a write-only ring buffer of fixed length.
 ///
@@ -37,13 +38,14 @@ use bytemuck::offset_of;
 /// let avg = buf.as_slice().iter().sum::<usize>() / buf.len();
 /// assert_eq!(avg, 4);
 /// ```
-pub struct HistoryBuffer<T, const N: usize> {
+#[repr(C)]
+pub struct HistoryBuffer<T: AnyBitPattern, const N: usize> {
     data: [MaybeUninit<T>; N],
     write_at: usize,
     filled: bool,
 }
 
-impl<T, const N: usize> HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     const INIT: MaybeUninit<T> = MaybeUninit::uninit();
 
     /// Constructs a new history buffer.
@@ -78,7 +80,7 @@ impl<T, const N: usize> HistoryBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     pub fn is_valid(data: &[u8]) -> bool {
         // Check if the data is of the correct length
         if data.len() != size_of::<Self>() {
@@ -100,7 +102,7 @@ impl<T, const N: usize> HistoryBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> HistoryBuffer<T, N>
+impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N>
 where
     T: Copy + Clone,
 {
@@ -131,7 +133,7 @@ where
     }
 }
 
-impl<T, const N: usize> HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// Returns the current fill level of the buffer.
     #[inline]
     pub fn len(&self) -> usize {
@@ -262,7 +264,7 @@ impl<T, const N: usize> HistoryBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> Extend<T> for HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> Extend<T> for HistoryBuffer<T, N> {
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = T>,
@@ -273,7 +275,7 @@ impl<T, const N: usize> Extend<T> for HistoryBuffer<T, N> {
     }
 }
 
-impl<'a, T, const N: usize> Extend<&'a T> for HistoryBuffer<T, N>
+impl<'a, T: AnyBitPattern, const N: usize> Extend<&'a T> for HistoryBuffer<T, N>
 where
     T: 'a + Clone,
 {
@@ -285,7 +287,7 @@ where
     }
 }
 
-impl<T, const N: usize> Clone for HistoryBuffer<T, N>
+impl<T: AnyBitPattern, const N: usize> Clone for HistoryBuffer<T, N>
 where
     T: Clone,
 {
@@ -300,7 +302,7 @@ where
     }
 }
 
-impl<T, const N: usize> Drop for HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> Drop for HistoryBuffer<T, N> {
     fn drop(&mut self) {
         unsafe {
             ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
@@ -311,7 +313,7 @@ impl<T, const N: usize> Drop for HistoryBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> Deref for HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> Deref for HistoryBuffer<T, N> {
     type Target = [T];
 
     fn deref(&self) -> &[T] {
@@ -319,14 +321,14 @@ impl<T, const N: usize> Deref for HistoryBuffer<T, N> {
     }
 }
 
-impl<T, const N: usize> AsRef<[T]> for HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> AsRef<[T]> for HistoryBuffer<T, N> {
     #[inline]
     fn as_ref(&self) -> &[T] {
         self
     }
 }
 
-impl<T, const N: usize> fmt::Debug for HistoryBuffer<T, N>
+impl<T: AnyBitPattern, const N: usize> fmt::Debug for HistoryBuffer<T, N>
 where
     T: fmt::Debug,
 {
@@ -335,13 +337,13 @@ where
     }
 }
 
-impl<T, const N: usize> Default for HistoryBuffer<T, N> {
+impl<T: AnyBitPattern, const N: usize> Default for HistoryBuffer<T, N> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T, const N: usize> PartialEq for HistoryBuffer<T, N>
+impl<T: AnyBitPattern, const N: usize> PartialEq for HistoryBuffer<T, N>
 where
     T: PartialEq,
 {
@@ -352,13 +354,13 @@ where
 
 /// An iterator on the underlying buffer ordered from oldest data to newest
 #[derive(Clone)]
-pub struct OldestOrdered<'a, T, const N: usize> {
+pub struct OldestOrdered<'a, T: AnyBitPattern, const N: usize> {
     buf: &'a HistoryBuffer<T, N>,
     cur: usize,
     wrapped: bool,
 }
 
-impl<'a, T, const N: usize> Iterator for OldestOrdered<'a, T, N> {
+impl<'a, T: AnyBitPattern, const N: usize> Iterator for OldestOrdered<'a, T, N> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {

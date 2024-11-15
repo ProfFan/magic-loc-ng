@@ -21,13 +21,13 @@ magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com
 embedded-graphics = { version = "0.8.0" }
 display-interface-i2c = "^0.5"
 display-interface = "^0.5"
-ssd1306 = { version = "0.8.*", git = "https://github.com/sjoerdsimons/ssd1306", branch = "async", features = [
+ssd1306 = { version = "0.9", git = "https://github.com/rust-embedded-community/ssd1306", branch = "master", features = [
     "async",
 ] }
 
 esp-hal = { version = "0.21.1", default-features = false, features = ["defmt"] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.4.0" }
+esp-hal-embassy = { version = "0.4.*", features = ["integrated-timers"] }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
@@ -101,10 +101,10 @@ embedded-io-async = "0.6.1"
 heapless = { version = "0.8", default-features = false, features = [
     "defmt-03",
 ] }
-embassy-executor = { version = "0.6.0", features = ["nightly"] }
-embassy-time = { version = "0.3.1", features = [
+embassy-executor = { version = "0.6.*", features = ["nightly"] }
+embassy-time = { version = "0.3.*", features = [
     "defmt",
-    "generic-queue-16",
+    # "generic-queue-16",
     # "tick-hz-16_000_000",
 ] }
 embassy-futures = "*"
@@ -146,7 +146,7 @@ opt-level = 1
 lto = "fat"
 opt-level = 3
 debug = true
-codegen-units = 1
+# codegen-units = 1
 
 # [profile.release.package.rhai]
 # opt-level = "z"
@@ -173,9 +173,14 @@ esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c4
 esp-hal-embbassy = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-hal-embassy" }
 esp-metadata = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-metadata" }
 esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "5d9cc1a588be3e90c48d40c32ecd846b1e83ffcb", package = "esp-alloc" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-time-driver" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "b4ee17fb4f1a77c26fc08e9fe9e0d343d1c059b4", package = "embassy-net-driver-channel" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-net" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-time" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-time-driver" }
+embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-time-queue-driver" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-net-driver-channel" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-executor" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-futures" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-sync" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "ea1b97ed4032d5f925839165c546833323ef1b01", package = "embassy-embedded-hal" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
 dw3000-ng = { path = "../dw3000" }

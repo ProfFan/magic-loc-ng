@@ -38,16 +38,19 @@ use esp_hal::{
     cpu_control::{CpuControl, Stack},
     dma::*,
     dma_buffers,
-    gpio::{Input, Io, Level, Output, Pull},
+    gpio::{Input, Level, Output, Pull},
     interrupt::{self, software::SoftwareInterruptControl},
-    peripherals::SPI3,
     prelude::*,
     rng::Rng,
     spi::{
         master::{Spi, SpiDmaBus},
         SpiMode,
     },
-    timer::{timg::TimerGroup, AnyTimer, OneShotTimer},
+    timer::{
+        systimer::{SystemTimer, Target},
+        timg::TimerGroup,
+        AnyTimer, OneShotTimer,
+    },
     Async,
 };
 use esp_wifi::{self};
@@ -56,13 +59,7 @@ use esp_wifi::{self};
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
 
 static IMU_PUBSUB: OnceLock<
-    embassy_sync::pubsub::PubSubChannel<
-        CriticalSectionRawMutex,
-        icm426xx::fifo::FifoPacket4,
-        3,
-        1,
-        1,
-    >,
+    embassy_sync::channel::Channel<CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3>,
 > = OnceLock::new();
 
 struct Dw3000Device {
@@ -101,8 +98,16 @@ async fn main(spawner: Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
-    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 2]> = StaticCell::new();
-    let timers = TIMERS_STATIC.init([OneShotTimer::new(timer0), OneShotTimer::new(timer1)]);
+    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
+    let timer2: AnyTimer = systimer.alarm0.into();
+    let timer3: AnyTimer = systimer.alarm1.into();
+    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 4]> = StaticCell::new();
+    let timers = TIMERS_STATIC.init([
+        OneShotTimer::new(timer0),
+        OneShotTimer::new(timer1),
+        OneShotTimer::new(timer2),
+        OneShotTimer::new(timer3),
+    ]);
     esp_hal_embassy::init(timers);
 
     esp_alloc::heap_allocator!(128 * 1024);
@@ -245,12 +250,10 @@ async fn main(spawner: Spawner) {
     .with_miso(miso)
     .with_mosi(mosi);
 
-    let imu_pubsub_ = embassy_sync::pubsub::PubSubChannel::<
+    let imu_pubsub_ = embassy_sync::channel::Channel::<
         CriticalSectionRawMutex,
         icm426xx::fifo::FifoPacket4,
         3,
-        1,
-        1,
     >::new();
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
@@ -270,7 +273,7 @@ async fn main(spawner: Spawner) {
                 Output::new(imu_cs, Level::High),
                 dma_channel,
                 spi,
-                imu_pubsub.publisher().unwrap(),
+                imu_pubsub.sender(),
             ))
             .unwrap();
 

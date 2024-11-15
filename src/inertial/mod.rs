@@ -2,6 +2,7 @@ use core::cell::{OnceCell, RefCell};
 
 use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::channel::Sender;
 use embassy_sync::mutex::Mutex;
 use embassy_sync::pubsub::Publisher;
 use embassy_time::{Delay, Duration, Ticker, Timer};
@@ -17,9 +18,9 @@ use crate::configuration::ConfigurationStore;
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,
-    dma_channel: dma::ChannelCreator<0>,
+    _dma_channel: dma::ChannelCreator<0>,
     spi: Spi<'static, Blocking, SPI2>,
-    imu_pub: Publisher<'static, CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3, 1, 1>,
+    imu_pub: Sender<'static, CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3>,
 ) {
     defmt::info!("Starting IMU task");
 
@@ -30,9 +31,9 @@ pub async fn imu_task(
         .register::<u32>(b"IMU_RATE")
         .unwrap();
 
-    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(256);
-    let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-    let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+    // let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(256);
+    // let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    // let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
     // let spi = spi
     //     .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
@@ -111,7 +112,7 @@ pub async fn imu_task(
                 packet.temperature_raw(),
             );
 
-            imu_pub.publish_immediate(*packet);
+            imu_pub.try_send(*packet).unwrap_or(());
         }
 
         ticker.next().await;

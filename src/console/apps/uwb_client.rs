@@ -162,9 +162,20 @@ pub async fn uwb_client_task(
 
         defmt::info!("Received poll packet: {:?}", poll_packet);
 
+        let my_tx_slot = poll_packet.slots.iter().position(|s| *s == address);
+
+        if my_tx_slot.is_none() {
+            defmt::info!("Not allocated to any slots");
+            continue;
+        }
+
+        let my_tx_slot = my_tx_slot.unwrap();
+
         // Prepare the response packet
-        let response_txtime =
-            rxts_poll + DwDuration::from_nanos(Duration::from_millis(4).as_micros() as u32 * 1000);
+        let response_txtime = rxts_poll
+            + DwDuration::from_nanos(
+                Duration::from_millis(4 + (my_tx_slot as u64) * 2).as_micros() as u32 * 1000,
+            );
         let response_txtime = DwInstant::new(response_txtime.value() >> 9 << 9).unwrap();
 
         let response_repr: Ieee802154Repr = Ieee802154Repr {
