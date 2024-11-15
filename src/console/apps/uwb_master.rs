@@ -23,6 +23,9 @@ use crate::{console::Token, utils::nonblocking_wait_async};
 #[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format)]
 #[repr(C)]
 pub struct UwbMasterPoll {
+    /// Header
+    pub header: u8,
+
     /// 8 TX slots
     pub slots: [u8; 8],
 
@@ -33,6 +36,9 @@ pub struct UwbMasterPoll {
 #[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format)]
 #[repr(C)]
 pub struct UwbClientResponse {
+    /// Header
+    pub header: u8,
+
     /// 40-bit DW3000 timestamp when the client received the poll
     pub rx_time_poll: [u8; 5],
 
@@ -147,6 +153,7 @@ pub async fn uwb_master_task(
 
         frame.payload_mut().unwrap()[..core::mem::size_of::<UwbMasterPoll>()].copy_from_slice(
             bytemuck::bytes_of(&UwbMasterPoll {
+                header: b'P',
                 slots: [0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
                 tx_time: *send_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
             }),

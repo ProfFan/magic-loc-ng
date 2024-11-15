@@ -87,6 +87,7 @@ pub async fn imu_stream_task(
 
     loop {
         if stop_signal.signaled() {
+            stop_signal.reset();
             break;
         }
 

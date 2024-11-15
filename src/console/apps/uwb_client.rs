@@ -55,6 +55,8 @@ pub async fn uwb_client_task(
 
     defmt::info!("DW3000 Reset!");
 
+    Timer::after(Duration::from_millis(100)).await;
+
     let dw3000 = dw3000_ng::DW3000::new(spi);
 
     let dw3000 = dw3000.init().unwrap();
@@ -143,10 +145,33 @@ pub async fn uwb_client_task(
             .split_last_chunk::<2>()
             .unwrap_or((&[], &[0, 0]));
 
+        if payload[0] != b'P' {
+            defmt::info!("Received non-poll packet");
+
+            if payload[0] != b'R' {
+                defmt::debug!("Received invalid header: {:?}", payload[0]);
+                continue;
+            }
+
+            let response_packet = match bytemuck::try_from_bytes::<UwbClientResponse>(payload) {
+                Ok(response_packet) => response_packet,
+                Err(_e) => {
+                    defmt::debug!("Not a response packet: {:?}", payload);
+                    continue;
+                }
+            };
+
+            defmt::info!(
+                "Received response packet from {}: {:?}",
+                frame.src_addr(),
+                response_packet
+            );
+        }
+
         let poll_packet: &UwbMasterPoll = match bytemuck::try_from_bytes(payload) {
             Ok(poll_packet) => poll_packet,
-            Err(e) => {
-                defmt::error!("Received invalid payload: {:?}", payload);
+            Err(_e) => {
+                defmt::debug!("Received invalid payload: {:?}", payload);
                 continue;
             }
         };
@@ -189,6 +214,7 @@ pub async fn uwb_client_task(
 
         tx_frame.payload_mut().unwrap()[..core::mem::size_of::<UwbClientResponse>()]
             .copy_from_slice(bytemuck::bytes_of(&UwbClientResponse {
+                header: b'R',
                 rx_time_poll: *rxts_poll.value().to_le_bytes().first_chunk::<5>().unwrap(),
                 tx_time_response: *response_txtime
                     .value()
