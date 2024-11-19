@@ -146,7 +146,7 @@ pub async fn uwb_client_task(
             .unwrap_or((&[], &[0, 0]));
 
         if payload[0] != b'P' {
-            defmt::info!("Received non-poll packet");
+            defmt::debug!("Received non-poll packet");
 
             if payload[0] != b'R' {
                 defmt::debug!("Received invalid header: {:?}", payload[0]);

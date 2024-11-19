@@ -65,7 +65,7 @@ static IMU_PUBSUB: OnceLock<
 > = OnceLock::new();
 
 struct Dw3000Device {
-    spi: SpiDevice<'static, NoopRawMutex, Spi<'static, Blocking>, Output<'static>>,
+    spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Blocking>, Output<'static>>,
     rst: Output<'static>,
     irq: Input<'static>,
 }
@@ -74,7 +74,7 @@ impl Dw3000Device {
     pub fn split_borrow(
         &mut self,
     ) -> (
-        &mut SpiDevice<'static, NoopRawMutex, Spi<'static, Blocking>, Output<'static>>,
+        &mut SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Blocking>, Output<'static>>,
         &mut Output<'static>,
         &mut Input<'static>,
     ) {
@@ -304,19 +304,23 @@ async fn main(spawner: Spawner) {
             .with_miso(dw_miso)
             .with_mosi(dw_mosi);
 
-            // let dma_channel = dma.channel1;
+            let dma_channel = dma.channel1;
 
-            // let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
-            // let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-            // let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+            let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
+            let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+            let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
-            let bus = RefCell::new(spi);
-            // .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
-            // .with_buffers(dma_rx_buf, dma_tx_buf)
+            let bus = RefCell::new(
+                spi.with_dma(dma_channel.configure(false, DmaPriority::Priority0))
+                    .with_buffers(dma_rx_buf, dma_tx_buf),
+            );
             // .into_async();
 
             static BUS: StaticCell<
-                embassy_sync::blocking_mutex::Mutex<NoopRawMutex, RefCell<Spi<'static, Blocking>>>,
+                embassy_sync::blocking_mutex::Mutex<
+                    NoopRawMutex,
+                    RefCell<SpiDmaBus<'static, Blocking>>,
+                >,
             > = StaticCell::new();
             let bus: &'static embassy_sync::blocking_mutex::Mutex<_, _> =
                 BUS.init_with(|| embassy_sync::blocking_mutex::Mutex::<NoopRawMutex, _>::new(bus));

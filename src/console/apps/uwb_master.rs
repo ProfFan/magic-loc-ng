@@ -7,7 +7,7 @@ use dw3000_ng::{
 };
 use embassy_executor::SendSpawner;
 
-use bytemuck::{AnyBitPattern, NoUninit};
+use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use embassy_futures::select::{select, Either};
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
@@ -44,6 +44,74 @@ pub struct UwbClientResponse {
 
     /// 40-bit DW3000 timestamp when the client sent the response
     pub tx_time_response: [u8; 5],
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod, defmt::Format)]
+#[repr(C)]
+pub struct UwbRxTimeReportSlot {
+    /// Address of the client
+    pub address: [u8; 2],
+    /// RX time
+    pub rx_time: [u8; 5],
+}
+
+#[derive(Debug, Clone, Copy, Zeroable, Pod, defmt::Format)]
+#[repr(C)]
+pub struct UwbTxTimeReportSlot {
+    /// Address of the client
+    pub address: [u8; 2],
+    /// TX time
+    pub tx_time: [u8; 5],
+}
+
+#[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format)]
+#[repr(C)]
+pub struct UwbMasterReport {
+    /// TX time in the CPU clock
+    pub cpu_tx_completion_time: u64,
+
+    /// TX time of the current poll
+    pub poll_tx_time: [u8; 5],
+
+    /// Sequence number of the current poll
+    pub poll_sequence_number: u8,
+
+    /// Number of active slots in the current round
+    pub num_slots: u8,
+
+    /// Number of responses in the current round
+    pub num_responses: u8,
+
+    /// RX times for each of the 8 slots in the current round
+    pub response_rx_time: [UwbRxTimeReportSlot; 8],
+
+    /// TX times for each of the 8 slots in the current round
+    pub response_tx_time: [UwbTxTimeReportSlot; 8],
+}
+
+#[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format)]
+#[repr(C)]
+pub struct UwbClientReport {
+    /// RX time of the poll in CPU clock
+    pub cpu_rx_time: u64,
+
+    /// RX time of the poll
+    pub poll_rx_time: [u8; 5],
+
+    /// Sequence number of the poll
+    pub poll_sequence_number: u8,
+
+    /// Address of the client
+    pub address: [u8; 2],
+
+    /// Number of responses from other clients
+    pub num_responses: u8,
+
+    /// Padding
+    pub padding: [u8; 7],
+
+    /// RX time of the responses from other clients
+    pub response_rx_time: [UwbRxTimeReportSlot; 8],
 }
 
 /// UWB master application
@@ -117,6 +185,7 @@ pub async fn uwb_master_task(
     defmt::info!("DW3000 Ready!");
 
     let mut ticker = embassy_time::Ticker::every(Duration::from_millis(100));
+    let mut sequence_number = 0;
     loop {
         ticker.next().await;
 
@@ -146,6 +215,9 @@ pub async fn uwb_master_task(
         let mut frame = Ieee802154Frame::new_unchecked(&mut buffer);
         FRAME_REPR.emit(&mut frame);
 
+        frame.set_sequence_number(sequence_number);
+        sequence_number += 1;
+
         let current_dw_time: DwInstant =
             DwInstant::new((dw3000.sys_time().unwrap() as u64) << 8).unwrap();
         let send_time = current_dw_time + DwDuration::from_nanos(1500000); // 1.5ms
@@ -154,7 +226,7 @@ pub async fn uwb_master_task(
         frame.payload_mut().unwrap()[..core::mem::size_of::<UwbMasterPoll>()].copy_from_slice(
             bytemuck::bytes_of(&UwbMasterPoll {
                 header: b'P',
-                slots: [0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+                slots: [0x07, 0x20, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00],
                 tx_time: *send_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
             }),
         );
