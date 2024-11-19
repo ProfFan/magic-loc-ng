@@ -7,6 +7,7 @@ use dw3000_ng::{
 };
 use embassy_executor::{SendSpawner, Spawner};
 
+use embassy_futures::select::{self, select, Either};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
 };
@@ -21,6 +22,77 @@ use crate::{
     },
     utils::nonblocking_wait_async,
 };
+
+use super::uwb_master::UwbClientReport;
+
+/// UWB client report streamer
+///
+/// Similar to the master streamer, but for the client
+///
+/// This task will send client's own RX times as well as all eavesdropped RX times to the host.
+///
+/// Runs on core 0
+#[embassy_executor::task]
+#[ram]
+pub async fn uwb_client_streamer_task(
+    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
+    stopped_signal: &'static core::sync::atomic::AtomicBool,
+    report_channel: &'static embassy_sync::channel::Channel<
+        CriticalSectionRawMutex,
+        UwbClientReport,
+        1,
+    >,
+) {
+    stopped_signal.store(false, core::sync::atomic::Ordering::Release);
+
+    let stack = *crate::network::WIFI_STACK.get().await;
+
+    let source_endpoint =
+        embassy_net::IpEndpoint::new(stack.config_v4().unwrap().address.address().into(), 40002);
+    let broadcast_ep =
+        embassy_net::IpEndpoint::new(embassy_net::IpAddress::v4(255, 255, 255, 255), 50002);
+
+    if !stack.is_link_up() {
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"WiFi not initialized\n");
+        return;
+    }
+
+    let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut rx_payload_buffer = [0; 1024];
+    let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
+    let mut tx_payload_buffer = [0; 1024];
+
+    // UDP socket
+    let mut socket = embassy_net::udp::UdpSocket::new(
+        stack,
+        &mut rx_metadata_buffer,
+        &mut rx_payload_buffer,
+        &mut tx_metadata_buffer,
+        &mut tx_payload_buffer,
+    );
+
+    socket.bind(source_endpoint).unwrap();
+
+    loop {
+        if stop_signal.signaled() {
+            stop_signal.reset(); // IMPORTANT: reset the signal so we can re-enter the loop
+            break;
+        }
+
+        let report = match select(report_channel.receive(), stop_signal.wait()).await {
+            Either::First(report) => report,
+            Either::Second(_) => break,
+        };
+
+        defmt::debug!("Received report: {:?}", report);
+
+        let report_bytes = bytemuck::bytes_of(&report);
+
+        socket.send_to(report_bytes, broadcast_ep).await.unwrap();
+    }
+
+    stopped_signal.store(true, core::sync::atomic::Ordering::Release);
+}
 
 /// UWB client application
 ///
