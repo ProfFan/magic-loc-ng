@@ -7,14 +7,10 @@ use dw3000_ng::{
 };
 use embassy_executor::{SendSpawner, Spawner};
 
-use bytemuck::{AnyBitPattern, NoUninit};
-use embassy_futures::select::{select, Either};
 use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    once_lock::OnceLock,
-    signal::Signal,
+    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
 };
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 

@@ -4,14 +4,12 @@ use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::Sender;
 use embassy_sync::mutex::Mutex;
-use embassy_sync::pubsub::Publisher;
 use embassy_time::{Delay, Duration, Ticker, Timer};
-use esp_hal::dma::{DmaPriority, DmaRxBuf, DmaTxBuf};
 use esp_hal::gpio::Output;
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
-use esp_hal::{dma, dma_buffers, Blocking};
+use esp_hal::{dma, Blocking};
 
 use crate::configuration::ConfigurationStore;
 

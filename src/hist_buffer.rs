@@ -175,7 +175,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
         T: Clone,
     {
         for item in other {
-            self.write(item.clone());
+            self.write(*item);
         }
     }
 
@@ -246,7 +246,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// }
     ///
     /// ```
-    pub fn oldest_ordered<'a>(&'a self) -> OldestOrdered<'a, T, N> {
+    pub fn oldest_ordered(&self) -> OldestOrdered<'_, T, N> {
         if self.filled {
             OldestOrdered {
                 buf: self,
@@ -294,7 +294,7 @@ where
     fn clone(&self) -> Self {
         let mut ret = Self::new();
         for (new, old) in ret.data.iter_mut().zip(self.as_slice()) {
-            new.write(old.clone());
+            new.write(*old);
         }
         ret.filled = self.filled;
         ret.write_at = self.write_at;

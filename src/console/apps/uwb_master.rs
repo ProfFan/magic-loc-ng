@@ -10,9 +10,7 @@ use embassy_executor::{SendSpawner, Spawner};
 use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use embassy_futures::select::{select, Either};
 use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    once_lock::OnceLock,
-    signal::Signal,
+    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::macros::ram;
@@ -128,7 +126,7 @@ pub async fn uwb_master_streamer_task(
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
-    let stack = crate::network::WIFI_STACK.get().await.clone();
+    let stack = *crate::network::WIFI_STACK.get().await;
 
     let source_endpoint =
         embassy_net::IpEndpoint::new(stack.config_v4().unwrap().address.address().into(), 40002);
@@ -431,8 +429,7 @@ pub async fn uwb_master<'a>(
     let stop_signal_streamer = STOP_SIGNAL_STREAMER.get_or_init(Signal::new);
     static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
 
-    let report_channel =
-        MASTER_REPORT_CHANNEL.get_or_init(|| embassy_sync::channel::Channel::new());
+    let report_channel = MASTER_REPORT_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
 
     let command = &args[1];
 
@@ -449,7 +446,7 @@ pub async fn uwb_master<'a>(
             .spawn(uwb_master_task(
                 stop_signal,
                 &STOPPED_SIGNAL,
-                &report_channel,
+                report_channel,
             ))
             .unwrap();
 
@@ -457,7 +454,7 @@ pub async fn uwb_master<'a>(
             .spawn(uwb_master_streamer_task(
                 stop_signal_streamer,
                 &STOPPED_SIGNAL,
-                &report_channel,
+                report_channel,
             ))
             .unwrap();
 

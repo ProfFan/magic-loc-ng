@@ -381,7 +381,7 @@ async fn main(spawner: Spawner) {
     spawner
         .spawn(console::console(
             spawner,
-            CPU1_SPAWNER.get().await.clone(),
+            *CPU1_SPAWNER.get().await,
             config_store.clone(),
         ))
         .unwrap();
