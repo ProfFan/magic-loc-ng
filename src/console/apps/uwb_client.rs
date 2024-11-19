@@ -5,7 +5,7 @@ use dw3000_ng::{
     hl::{ConfigGPIOs, RxQuality, SendTime},
     time::{Duration as DwDuration, Instant as DwInstant},
 };
-use embassy_executor::SendSpawner;
+use embassy_executor::{SendSpawner, Spawner};
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use embassy_futures::select::{select, Either};
@@ -250,7 +250,11 @@ pub async fn uwb_client_task(
 }
 
 /// Controller for the UWB client application
-pub async fn uwb_client<'a>(spawner_core1: SendSpawner, args: &[Token<'a>]) -> Result<(), ()> {
+pub async fn uwb_client<'a>(
+    spawner_core0: Spawner,
+    spawner_core1: SendSpawner,
+    args: &[Token<'a>],
+) -> Result<(), ()> {
     if args.len() < 2 {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_master <start|stop>\n");
         return Err(());
