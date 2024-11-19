@@ -81,7 +81,10 @@ pub async fn uwb_client_streamer_task(
 
         let report = match select(report_channel.receive(), stop_signal.wait()).await {
             Either::First(report) => report,
-            Either::Second(_) => break,
+            Either::Second(_) => {
+                stop_signal.reset();
+                break;
+            }
         };
 
         defmt::debug!("Received report: {:?}", report);
