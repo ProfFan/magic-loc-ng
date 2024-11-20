@@ -75,12 +75,14 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
 
     /// Clears the buffer, replacing every element with the default value of
     /// type `T`.
+    #[allow(unused)]
     pub fn clear(&mut self) {
         *self = Self::new();
     }
 }
 
 impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
+    #[allow(unused)]
     pub fn is_valid(data: &[u8]) -> bool {
         // Check if the data is of the correct length
         if data.len() != size_of::<Self>() {
@@ -119,6 +121,7 @@ where
     /// assert_eq!(x.as_slice(), [4; 16]);
     /// ```
     #[inline]
+    #[allow(unused)]
     pub fn new_with(t: T) -> Self {
         Self {
             data: [MaybeUninit::new(t); N],
@@ -128,6 +131,7 @@ where
     }
 
     /// Clears the buffer, replacing every element with the given value.
+    #[allow(unused)]
     pub fn clear_with(&mut self, t: T) {
         *self = Self::new_with(t);
     }
@@ -170,6 +174,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     ///
     /// If the slice is longer than the buffer, only the last `self.len()`
     /// elements will actually be stored.
+    #[allow(unused)]
     pub fn extend_from_slice(&mut self, other: &[T])
     where
         T: Clone,
@@ -191,6 +196,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// x.write(10);
     /// assert_eq!(x.recent(), Some(&10));
     /// ```
+    #[allow(unused)]
     pub fn recent(&self) -> Option<&T> {
         if self.write_at == 0 {
             if self.filled {
@@ -221,6 +227,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// buffer.extend([1, 2, 3, 4, 5, 6]);
     /// assert_eq!(buffer.as_slices(), (&[1, 2, 3][..], &[4, 5, 6][..]));
     /// ```
+    #[allow(unused)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
         let buffer = self.as_slice();
 

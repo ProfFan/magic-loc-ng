@@ -7,7 +7,7 @@ use dw3000_ng::{
 };
 use embassy_executor::{SendSpawner, Spawner};
 
-use embassy_futures::select::{self, select, Either};
+use embassy_futures::select::{select, Either};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
 };
@@ -17,7 +17,7 @@ use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{
     console::{
-        apps::uwb_master::{UwbClientResponse, UwbMasterPoll},
+        apps::uwb_master::{UwbClientResponse, UwbMasterPoll, UwbRxTimeReportSlot},
         Token,
     },
     utils::nonblocking_wait_async,
@@ -108,6 +108,11 @@ pub async fn uwb_client_streamer_task(
 pub async fn uwb_client_task(
     stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
+    report_channel: &'static embassy_sync::channel::Channel<
+        CriticalSectionRawMutex,
+        UwbClientReport,
+        1,
+    >,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -124,7 +129,7 @@ pub async fn uwb_client_task(
     Timer::after(Duration::from_millis(10)).await;
     rst.set_high();
 
-    defmt::info!("DW3000 Reset!");
+    defmt::debug!("DW3000 Reset!");
 
     Timer::after(Duration::from_millis(100)).await;
 
@@ -142,7 +147,7 @@ pub async fn uwb_client_task(
 
     let mut dw3000 = dw3000.config(dwm_config, embassy_time::Delay).unwrap();
 
-    defmt::info!("DW3000 Initialized!");
+    defmt::debug!("DW3000 Initialized!");
 
     dw3000.gpio_config(ConfigGPIOs::enable_led()).unwrap();
     dw3000
@@ -169,7 +174,7 @@ pub async fn uwb_client_task(
         panic!();
     }
 
-    defmt::info!("DW3000 Ready!");
+    defmt::debug!("DW3000 Ready!");
 
     loop {
         if stop_signal.signaled() {
@@ -191,6 +196,7 @@ pub async fn uwb_client_task(
                     continue;
                 }
             };
+        let rx_timestamp_cpu = embassy_time::Instant::now();
 
         dw3000 = receiving.finish_receiving().unwrap();
 
@@ -203,14 +209,14 @@ pub async fn uwb_client_task(
             }
         };
 
-        defmt::info!(
+        defmt::debug!(
             "Received poll packet: len: {}, rxts_poll: {}, quality: {:?}",
             len,
             rxts_poll,
             quality
         );
 
-        let (payload, crc) = frame
+        let (payload, _crc) = frame
             .payload()
             .unwrap()
             .split_last_chunk::<2>()
@@ -232,7 +238,7 @@ pub async fn uwb_client_task(
                 }
             };
 
-            defmt::info!(
+            defmt::debug!(
                 "Received response packet from {}: {:?}",
                 frame.src_addr(),
                 response_packet
@@ -247,78 +253,161 @@ pub async fn uwb_client_task(
             }
         };
 
-        defmt::info!("Received poll packet: {:?}", poll_packet);
+        defmt::debug!("Received poll packet: {:?}", poll_packet);
 
-        let my_tx_slot = poll_packet.slots.iter().position(|s| *s == address);
-
-        if my_tx_slot.is_none() {
-            defmt::info!("Not allocated to any slots");
-            continue;
-        }
-
-        let my_tx_slot = my_tx_slot.unwrap();
-
-        // Prepare the response packet
-        let response_txtime = rxts_poll
-            + DwDuration::from_nanos(
-                Duration::from_millis(4 + (my_tx_slot as u64) * 2).as_micros() as u32 * 1000,
-            );
-        let response_txtime = DwInstant::new(response_txtime.value() >> 9 << 9).unwrap();
-
-        let response_repr: Ieee802154Repr = Ieee802154Repr {
-            frame_type: smoltcp::wire::Ieee802154FrameType::Data,
-            frame_version: smoltcp::wire::Ieee802154FrameVersion::Ieee802154_2006,
-            security_enabled: false,
-            sequence_number: frame.sequence_number(),
-            frame_pending: false,
-            ack_request: false,
-            pan_id_compression: true,
-            dst_addr: Some(Ieee802154Address::BROADCAST),
-            src_addr: Some(Ieee802154Address::Short([0x00, address])),
-            src_pan_id: Some(smoltcp::wire::Ieee802154Pan(0xDEAD)),
-            dst_pan_id: None,
+        let mut report = UwbClientReport {
+            poll_rx_time: *rxts_poll.value().to_le_bytes().first_chunk::<5>().unwrap(),
+            poll_sequence_number: frame.sequence_number().unwrap_or(0),
+            cpu_rx_time: rx_timestamp_cpu.elapsed().as_micros(),
+            address: [0x00, address],
+            ..Default::default()
         };
 
-        let mut tx_buffer = [0; 127];
-        let mut tx_frame = Ieee802154Frame::new_unchecked(&mut tx_buffer);
-        response_repr.emit(&mut tx_frame);
+        for (i, slot_addr) in poll_packet.slots.iter().enumerate() {
+            // Each slot is 3 milliseconds
+            let slot_time_timeout = rx_timestamp_cpu + Duration::from_millis(4 + 2 + 3 * i as u64);
 
-        tx_frame.payload_mut().unwrap()[..core::mem::size_of::<UwbClientResponse>()]
-            .copy_from_slice(bytemuck::bytes_of(&UwbClientResponse {
-                header: b'R',
-                rx_time_poll: *rxts_poll.value().to_le_bytes().first_chunk::<5>().unwrap(),
-                tx_time_response: *response_txtime
-                    .value()
-                    .to_le_bytes()
-                    .first_chunk::<5>()
-                    .unwrap(),
-            }));
-        let len = response_repr.buffer_len() + core::mem::size_of::<UwbClientResponse>();
+            if *slot_addr == address {
+                // We are allocated to this slot, send a response
+                // Prepare the response packet
+                let response_txtime = rxts_poll
+                    + DwDuration::from_nanos(
+                        Duration::from_millis(5 + (i as u64) * 3).as_micros() as u32 * 1000,
+                    );
+                let response_txtime = DwInstant::new(response_txtime.value() >> 9 << 9).unwrap();
 
-        let mut sending = dw3000
-            .send_raw(
-                &tx_buffer[..len],
-                SendTime::Delayed(response_txtime),
-                &dwm_config,
-            )
-            .unwrap();
+                let response_repr: Ieee802154Repr = Ieee802154Repr {
+                    frame_type: smoltcp::wire::Ieee802154FrameType::Data,
+                    frame_version: smoltcp::wire::Ieee802154FrameVersion::Ieee802154_2006,
+                    security_enabled: false,
+                    sequence_number: frame.sequence_number(),
+                    frame_pending: false,
+                    ack_request: false,
+                    pan_id_compression: true,
+                    dst_addr: Some(Ieee802154Address::BROADCAST),
+                    src_addr: Some(Ieee802154Address::Short([0x00, address])),
+                    src_pan_id: Some(smoltcp::wire::Ieee802154Pan(0xDEAD)),
+                    dst_pan_id: None,
+                };
 
-        let send_result: Result<DwInstant, dw3000_ng::Error<_>> =
-            nonblocking_wait_async(async || sending.s_wait(), irq).await;
+                let mut tx_buffer = [0; 127];
+                let mut tx_frame = Ieee802154Frame::new_unchecked(&mut tx_buffer);
+                response_repr.emit(&mut tx_frame);
 
-        if let Err(e) = send_result {
-            defmt::error!("Error sending response packet: {:?}", e);
-            dw3000 = sending.finish_sending().unwrap();
-            continue;
+                tx_frame.payload_mut().unwrap()[..core::mem::size_of::<UwbClientResponse>()]
+                    .copy_from_slice(bytemuck::bytes_of(&UwbClientResponse {
+                        header: b'R',
+                        rx_time_poll: *rxts_poll.value().to_le_bytes().first_chunk::<5>().unwrap(),
+                        tx_time_response: *response_txtime
+                            .value()
+                            .to_le_bytes()
+                            .first_chunk::<5>()
+                            .unwrap(),
+                    }));
+                let len = response_repr.buffer_len() + core::mem::size_of::<UwbClientResponse>();
+
+                let mut sending = dw3000
+                    .send_raw(
+                        &tx_buffer[..len],
+                        SendTime::Delayed(response_txtime),
+                        &dwm_config,
+                    )
+                    .unwrap();
+
+                let send_result: Result<DwInstant, dw3000_ng::Error<_>> =
+                    nonblocking_wait_async(async || sending.s_wait(), irq).await;
+
+                if let Err(e) = send_result {
+                    defmt::error!("Error sending response packet: {:?}", e);
+                    dw3000 = sending.finish_sending().unwrap();
+                    continue;
+                }
+
+                dw3000 = sending.finish_sending().unwrap();
+
+                defmt::debug!("Sent response packet to slot {}", i);
+            } else {
+                // Listen for a response from other nodes
+                let mut receiving = dw3000.receive(dwm_config).unwrap();
+                let timeout = Timer::at(slot_time_timeout);
+
+                let mut buffer = [0; 128];
+                let rx_fut = async {
+                    let result: Option<(usize, DwInstant, RxQuality)> =
+                        match nonblocking_wait_async(
+                            async || receiving.r_wait_buf(&mut buffer),
+                            irq,
+                        )
+                        .await
+                        {
+                            Ok(r) => Some(r),
+                            _ => None,
+                        };
+
+                    result
+                };
+
+                let (len, rx_time, _rx_quality) = match select(rx_fut, timeout).await {
+                    Either::First(Some(rx_result)) => rx_result,
+                    Either::First(None) => {
+                        defmt::debug!("No response from slot {}", i);
+                        dw3000 = receiving.finish_receiving().unwrap();
+                        continue;
+                    }
+                    Either::Second(_) => {
+                        defmt::debug!("Timeout waiting for response from slot {}", i);
+                        dw3000 = receiving.finish_receiving().unwrap();
+                        continue;
+                    }
+                };
+
+                dw3000 = receiving.finish_receiving().unwrap();
+
+                // Parse the response packet
+                let frame = match Ieee802154Frame::new_checked(&buffer[..len]) {
+                    Ok(packet) => packet,
+                    Err(e) => {
+                        defmt::error!("Error parsing response packet: {:?}", e);
+                        continue;
+                    }
+                };
+
+                let (payload, _crc) = frame
+                    .payload()
+                    .unwrap()
+                    .split_last_chunk::<2>()
+                    .unwrap_or((&[], &[0, 0]));
+
+                let response_packet = match bytemuck::try_from_bytes::<UwbClientResponse>(payload) {
+                    Ok(response_packet) => response_packet,
+                    Err(_e) => {
+                        defmt::debug!("Not a response packet: {:?}", payload);
+                        continue;
+                    }
+                };
+
+                defmt::debug!(
+                    "Received response packet from {}: {:?}",
+                    frame.src_addr(),
+                    response_packet
+                );
+
+                report.response_rx_time[i] = UwbRxTimeReportSlot {
+                    rx_time: *rx_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
+                    address: [0x00, *slot_addr],
+                };
+            }
         }
-
-        dw3000 = sending.finish_sending().unwrap();
     }
 
-    defmt::info!("UWB client stopped");
+    defmt::debug!("UWB client stopped");
 
     stopped_signal.store(true, core::sync::atomic::Ordering::Release);
 }
+
+static CLIENT_REPORT_CHANNEL: OnceLock<
+    embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbClientReport, 1>,
+> = OnceLock::new();
 
 /// Controller for the UWB client application
 pub async fn uwb_client<'a>(
@@ -333,7 +422,11 @@ pub async fn uwb_client<'a>(
 
     static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
     let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
+    static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+    let stop_signal_streamer = STOP_SIGNAL_STREAMER.get_or_init(Signal::new);
     static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
+
+    let report_channel = CLIENT_REPORT_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
 
     let command = &args[1];
 
@@ -347,7 +440,19 @@ pub async fn uwb_client<'a>(
         }
 
         spawner_core1
-            .spawn(uwb_client_task(stop_signal, &STOPPED_SIGNAL))
+            .spawn(uwb_client_task(
+                stop_signal,
+                &STOPPED_SIGNAL,
+                report_channel,
+            ))
+            .unwrap();
+
+        spawner_core0
+            .spawn(uwb_client_streamer_task(
+                stop_signal_streamer,
+                &STOPPED_SIGNAL, // TODO: use a different signal?
+                report_channel,
+            ))
             .unwrap();
 
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"UWB client started\n");
@@ -360,10 +465,11 @@ pub async fn uwb_client<'a>(
         }
 
         stop_signal.signal(true);
+        stop_signal_streamer.signal(true);
     } else {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_master <start|stop>\n");
         return Err(());
     }
 
     Ok(())
-}
+} /////////

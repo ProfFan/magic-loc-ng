@@ -87,7 +87,7 @@ pub struct UwbMasterReport {
     pub response_tx_time: [UwbTxTimeReportSlot; 8],
 }
 
-#[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format)]
+#[derive(Debug, Clone, Copy, AnyBitPattern, NoUninit, defmt::Format, Default)]
 #[repr(C)]
 pub struct UwbClientReport {
     /// RX time of the poll in CPU clock
@@ -101,12 +101,6 @@ pub struct UwbClientReport {
 
     /// Address of the client
     pub address: [u8; 2],
-
-    /// Number of responses from other clients
-    pub num_responses: u8,
-
-    /// Padding
-    pub padding: [u8; 7],
 
     /// RX time of the responses from other clients
     pub response_rx_time: [UwbRxTimeReportSlot; 8],
@@ -205,7 +199,7 @@ pub async fn uwb_master_task(
     Timer::after(Duration::from_millis(10)).await;
     rst.set_high();
 
-    defmt::info!("DW3000 Reset!");
+    defmt::debug!("DW3000 Reset!");
 
     Timer::after(Duration::from_millis(200)).await;
 
@@ -223,7 +217,7 @@ pub async fn uwb_master_task(
 
     let mut dw3000 = dw3000.config(dwm_config, embassy_time::Delay).unwrap();
 
-    defmt::info!("DW3000 Initialized!");
+    defmt::debug!("DW3000 Initialized!");
 
     dw3000.gpio_config(ConfigGPIOs::enable_led()).unwrap();
     dw3000
@@ -250,7 +244,7 @@ pub async fn uwb_master_task(
         panic!();
     }
 
-    defmt::info!("DW3000 Ready!");
+    defmt::debug!("DW3000 Ready!");
 
     let mut ticker = embassy_time::Ticker::every(Duration::from_millis(100));
     let mut sequence_number = 0;
@@ -261,8 +255,6 @@ pub async fn uwb_master_task(
             stop_signal.reset(); // IMPORTANT: reset the signal so we can re-enter the loop
             break;
         }
-
-        let timeout = Instant::now() + Duration::from_millis(90);
 
         // The master is always with address 0x0000 and pan id 0xDEAD
         const FRAME_REPR: Ieee802154Repr = Ieee802154Repr {
@@ -320,9 +312,11 @@ pub async fn uwb_master_task(
             ..Default::default()
         };
 
-        defmt::info!("Sent poll with time {:?}", send_result.unwrap());
+        defmt::debug!("Sent poll with time {:?}", send_result.unwrap());
 
         dw3000 = sending.finish_sending().unwrap();
+
+        let timeout = Instant::now() + Duration::from_millis(90);
 
         // Wait for responses for up to 90ms
         loop {
@@ -337,7 +331,7 @@ pub async fn uwb_master_task(
             let result: Result<(usize, DwInstant, RxQuality), _> = match race {
                 Either::First(receive_result) => receive_result,
                 Either::Second(_) => {
-                    defmt::info!("Timeout waiting for response");
+                    defmt::debug!("Timeout waiting for response");
                     dw3000 = receiving.finish_receiving().unwrap();
                     break;
                 }
@@ -351,7 +345,7 @@ pub async fn uwb_master_task(
                     continue;
                 }
             };
-            defmt::info!("Received response at {}, quality {:?}", rx_time, quality);
+            defmt::debug!("Received response at {}, quality {:?}", rx_time, quality);
 
             let frame = match Ieee802154Frame::new_checked(&buffer[..len]) {
                 Ok(frame) => frame,
@@ -394,7 +388,7 @@ pub async fn uwb_master_task(
                 };
             }
 
-            defmt::info!(
+            defmt::debug!(
                 "Received response from {:?} at {:?}, response {:?}",
                 frame.src_addr(),
                 rx_time,
@@ -468,6 +462,7 @@ pub async fn uwb_master<'a>(
         }
 
         stop_signal.signal(true);
+        stop_signal_streamer.signal(true);
     } else {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_master <start|stop>\n");
         return Err(());
