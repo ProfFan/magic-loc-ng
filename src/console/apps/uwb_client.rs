@@ -272,7 +272,7 @@ pub async fn uwb_client_task(
                 // Prepare the response packet
                 let response_txtime = rxts_poll
                     + DwDuration::from_nanos(
-                        Duration::from_millis(5 + (i as u64) * 3).as_micros() as u32 * 1000,
+                        Duration::from_micros(5500 + (i as u64) * 3000).as_micros() as u32 * 1000,
                     );
                 let response_txtime = DwInstant::new(response_txtime.value() >> 9 << 9).unwrap();
 
@@ -398,6 +398,8 @@ pub async fn uwb_client_task(
                 };
             }
         }
+
+        report_channel.send(report).await;
     }
 
     defmt::debug!("UWB client stopped");

@@ -1,21 +1,21 @@
 [target.xtensa-esp32s3-none-elf]
-runner = "espflash flash --monitor -L defmt --partition-table partitions.csv"
+runner = "espflash flash --monitor -L defmt --partition-table partitions.csv --bootloader bootloader/bootloader.bin"
 # runner = "probe-rs run --chip esp32s3 --idf-partition-table partitions.csv"
 
 [env]
 ESP_LOG = "INFO"
 DEFMT_LOG = "info"
 ESP_HAL_PLACE_SPI_DRIVER_IN_RAM = "true"
-ESP_WIFI_TICK_RATE_HZ = "1000"
+ESP_WIFI_TICK_RATE_HZ = "2000"
 ESP_WIFI_AMPDU_TX_ENABLE = "false"
 ESP_WIFI_AMPDU_RX_ENABLE = "false"
-ESP_WIFI_TX_QUEUE_SIZE = "5"
-ESP_WIFI_RX_QUEUE_SIZE = "5"
+ESP_WIFI_TX_QUEUE_SIZE = "10"
+ESP_WIFI_RX_QUEUE_SIZE = "10"
 ESP_WIFI_STATIC_TX_BUF_NUM = "8"
 ESP_WIFI_STATIC_RX_BUF_NUM = "8"
-ESP_WIFI_DYNAMIC_RX_BUF_NUM = "3"
-ESP_WIFI_DYNAMIC_TX_BUF_NUM = "3"
-ESP_WIFI_RX_BA_WIN = "2"
+ESP_WIFI_DYNAMIC_RX_BUF_NUM = "10"
+ESP_WIFI_DYNAMIC_TX_BUF_NUM = "10"
+ESP_WIFI_RX_BA_WIN = "4"
 ESP_WIFI_COUNTRY_CODE = "US"
 ESP_WIFI_PHY_ENABLE_USB = "true"
 
@@ -23,8 +23,6 @@ ESP_WIFI_PHY_ENABLE_USB = "true"
 rustflags = [
     "-C",
     "link-arg=-Tlinkall.x",
-    # "-C",
-    # "link-arg=-Trom_functions.x",
     "-C",
     "link-arg=-nostartfiles",
     "-C",

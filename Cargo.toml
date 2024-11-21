@@ -7,8 +7,8 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
-esp-fast-serial = { version = "0.3.0", path = "../esp-fast-serial" }
-esp-wifi-sys = { version = "0.6.*" }
+esp-fast-serial = { version = "0.4.0", path = "../esp-fast-serial" }
+esp-wifi-sys = { version = "0.7.*" }
 icm426xx = { version = "0.2.*", default-features = false, path = "../icm426xx", features = [
     # "async",
 ] }
@@ -25,16 +25,16 @@ ssd1306 = { version = "0.9", git = "https://github.com/rust-embedded-community/s
     "async",
 ] }
 
-esp-hal = { version = "0.21.1", default-features = false, features = ["defmt"] }
+esp-hal = { version = "0.22.0", default-features = false, features = ["defmt"] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.4.*", features = ["integrated-timers"] }
+esp-hal-embassy = { version = "0.5.*", features = ["integrated-timers"] }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
 embedded-hal-bus = { version = "0.2", features = ["async"] }
 
-esp-wifi = { version = "0.10.*", default-features = false, features = [
+esp-wifi = { version = "0.11.*", default-features = false, features = [
     # "esp-now",
     # "async",
     "sniffer",
@@ -60,6 +60,7 @@ esp-println = { version = "0.12.*", default-features = false, features = [
 ] }
 
 bbqueue = { version = "0.5.1" }
+thingbuf = { version = "0.1", default-features = false, features = ["static"] }
 
 # esp-println = { version = "0.7.1", default-features = false, features = [
 esp-storage = { version = "0.3", features = ["nor-flash"] }
@@ -73,7 +74,7 @@ sequential-storage = { version = "3.0", features = ["defmt-03"] }
 # disabling default-features fixes this
 serde = { version = "1.0.*", default-features = false }
 binrw = { version = "0.14.0", default-features = false }
-bytemuck = "1.18.*"
+bytemuck = "1.20.*"
 bstr = { version = "1.*", default-features = false }
 
 critical-section = { version = "1.1.2", default-features = false }
@@ -168,7 +169,7 @@ partition_table = "partitions.csv"
 esp-println = { path = "../esp-hal/esp-println", package = "esp-println" }
 esp-backtrace = { path = "../esp-hal/esp-backtrace", package = "esp-backtrace" }
 esp-wifi = { path = "../esp-hal/esp-wifi", package = "esp-wifi" }
-esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "a3e2ed64e9095f120bbcebe6287ddf62760774db", package = "esp-wifi-sys" }
+# esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "a3e2ed64e9095f120bbcebe6287ddf62760774db", package = "esp-wifi-sys" }
 esp-hal = { path = "../esp-hal/esp-hal", package = "esp-hal" }
 esp-hal-embbassy = { path = "../esp-hal/esp-hal-embassy", package = "esp-hal-embassy" }
 esp-metadata = { path = "../esp-hal/esp-metadata", package = "esp-metadata" }

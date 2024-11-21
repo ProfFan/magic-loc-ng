@@ -7,8 +7,6 @@ use esp_hal::macros::ram;
 
 use super::Token;
 
-use crate::IMU_PUBSUB;
-
 const IMU_PACKET_HISTORY_SIZE: usize = 30;
 
 #[derive(Debug)]
@@ -45,7 +43,7 @@ pub async fn imu_stream_task(
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
-    let imu_sub = IMU_PUBSUB.get().await.receiver();
+    let imu_sub = crate::IMU_RECEIVER.get().await;
 
     let mut wire_packet = IMUPacket {
         header: *b"MIMU",
@@ -91,7 +89,10 @@ pub async fn imu_stream_task(
             break;
         }
 
-        let imu_packet = imu_sub.receive().await;
+        let imu_packet = match imu_sub.recv().await {
+            Some(imu_packet) => imu_packet,
+            None => continue,
+        };
 
         wire_packet.timestamp = embassy_time::Instant::now().as_micros();
         wire_packet.packets.write(imu_packet);

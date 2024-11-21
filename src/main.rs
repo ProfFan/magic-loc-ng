@@ -60,9 +60,10 @@ use esp_wifi::{self};
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
 
-static IMU_PUBSUB: OnceLock<
-    embassy_sync::channel::Channel<CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3>,
-> = OnceLock::new();
+static IMU_PUBSUB: OnceLock<thingbuf::mpsc::StaticChannel<icm426xx::fifo::FifoPacket4, 3>> =
+    OnceLock::new();
+static IMU_RECEIVER: OnceLock<thingbuf::mpsc::StaticReceiver<icm426xx::fifo::FifoPacket4>> =
+    OnceLock::new();
 
 struct Dw3000Device {
     spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Blocking>, Output<'static>>,
@@ -252,11 +253,7 @@ async fn main(spawner: Spawner) {
     .with_miso(miso)
     .with_mosi(mosi);
 
-    let imu_pubsub_ = embassy_sync::channel::Channel::<
-        CriticalSectionRawMutex,
-        icm426xx::fifo::FifoPacket4,
-        3,
-    >::new();
+    let imu_pubsub_ = thingbuf::mpsc::StaticChannel::<icm426xx::fifo::FifoPacket4, 3>::new();
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
 
@@ -269,13 +266,17 @@ async fn main(spawner: Spawner) {
             EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
         let spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
 
+        let (imu_pub, imu_sub) = imu_pubsub.split();
+
+        IMU_RECEIVER.init(imu_sub).unwrap();
+
         spawner_l2
             .spawn(inertial::imu_task(
                 config_store_.clone(),
                 Output::new(imu_cs, Level::High),
                 dma_channel,
                 spi,
-                imu_pubsub.sender(),
+                imu_pub,
             ))
             .unwrap();
 

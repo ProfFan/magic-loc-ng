@@ -2,7 +2,6 @@ use core::cell::{OnceCell, RefCell};
 
 use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
-use embassy_sync::channel::Sender;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Duration, Ticker, Timer};
 use esp_hal::gpio::Output;
@@ -20,7 +19,7 @@ pub async fn imu_task(
     mut cs_output: Output<'static>,
     _dma_channel: dma::ChannelCreator<0>,
     spi: Spi<'static, Blocking, SPI2>,
-    imu_pub: Sender<'static, CriticalSectionRawMutex, icm426xx::fifo::FifoPacket4, 3>,
+    imu_pub: thingbuf::mpsc::StaticSender<icm426xx::fifo::FifoPacket4>,
 ) {
     defmt::info!("Starting IMU task");
 

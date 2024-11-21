@@ -309,6 +309,7 @@ pub async fn uwb_master_task(
         let mut report = UwbMasterReport {
             cpu_tx_completion_time: embassy_time::Instant::now().as_micros(),
             poll_sequence_number: sequence_number,
+            poll_tx_time: *send_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
             ..Default::default()
         };
 
@@ -385,6 +386,10 @@ pub async fn uwb_master_task(
                 report.response_rx_time[slot] = UwbRxTimeReportSlot {
                     address: *client_addr_rx,
                     rx_time: *rx_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
+                };
+                report.response_tx_time[slot] = UwbTxTimeReportSlot {
+                    address: *client_addr_rx,
+                    tx_time: uwb_client_response.tx_time_response,
                 };
             }
 
