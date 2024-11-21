@@ -4,7 +4,7 @@ use embassy_executor::{task, SendSpawner, Spawner};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 
-mod apps;
+pub mod apps;
 
 const MAX_BUFFER_SIZE: usize = 128;
 

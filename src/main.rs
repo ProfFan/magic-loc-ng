@@ -129,6 +129,13 @@ async fn main(spawner: Spawner) {
         .register::<u8>(b"MVERSION")
         .unwrap();
 
+    config_store
+        .lock()
+        .await
+        .registry
+        .register::<u8>(b"SYS_ROLE")
+        .unwrap();
+
     let mut buff = [0u8; 256];
     let ver = config_store
         .lock()
@@ -386,6 +393,42 @@ async fn main(spawner: Spawner) {
             config_store.clone(),
         ))
         .unwrap();
+
+    // Wait until the boot sequence is complete
+    Timer::after_secs(2).await;
+
+    let role = config_store
+        .lock()
+        .await
+        .get::<u8>(&mut buff, b"SYS_ROLE")
+        .await
+        .unwrap();
+
+    defmt::info!("System role: {}", role);
+
+    if let Some(role) = role {
+        if role == 1 {
+            // Master
+            crate::console::apps::uwb_master::uwb_master_start(spawner, *CPU1_SPAWNER.get().await)
+                .await
+                .unwrap();
+
+            // IMU Stream start
+            crate::console::apps::imu_stream::imu_streamer_start(spawner)
+                .await
+                .unwrap();
+        } else if role == 2 {
+            // Client
+            crate::console::apps::uwb_client::uwb_client_start(spawner, *CPU1_SPAWNER.get().await)
+                .await
+                .unwrap();
+
+            // IMU Stream start
+            crate::console::apps::imu_stream::imu_streamer_start(spawner)
+                .await
+                .unwrap();
+        }
+    }
 
     // A never-ending heartbeat
     loop {

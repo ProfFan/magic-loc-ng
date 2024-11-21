@@ -285,7 +285,7 @@ pub async fn uwb_master_task(
 
         let poll_packet = UwbMasterPoll {
             header: b'P',
-            slots: [0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09],
+            slots: [0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10],
             tx_time: *send_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
         };
 
