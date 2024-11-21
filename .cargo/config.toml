@@ -1,5 +1,5 @@
 [target.xtensa-esp32s3-none-elf]
-runner = "espflash flash --monitor -L defmt --partition-table partitions.csv --bootloader bootloader/bootloader.bin"
+runner = "espflash flash --flash-freq 80mhz --monitor -L defmt --partition-table partitions.csv --bootloader bootloader/bootloader.bin"
 # runner = "probe-rs run --chip esp32s3 --idf-partition-table partitions.csv"
 
 [env]
@@ -23,6 +23,8 @@ ESP_WIFI_PHY_ENABLE_USB = "true"
 rustflags = [
     "-C",
     "link-arg=-Tlinkall.x",
+    # "-C",
+    # "link-arg=-Trom_functions.x",
     "-C",
     "link-arg=-nostartfiles",
     "-C",

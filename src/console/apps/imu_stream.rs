@@ -120,41 +120,61 @@ pub async fn imu_stream_task(
     stopped_signal.store(true, core::sync::atomic::Ordering::Release);
 }
 
+static STOP_SIGNAL: OnceLock<Signal<NoopRawMutex, bool>> = OnceLock::new();
+static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
+
+pub async fn imu_streamer_start(spawner: Spawner) -> Result<(), ()> {
+    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
+
+    // make sure we don't already have a task running
+    if !STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
+        return Err(());
+    }
+
+    spawner
+        .spawn(imu_stream_task(stop_signal, &STOPPED_SIGNAL))
+        .unwrap();
+
+    Ok(())
+}
+
+pub async fn imu_streamer_stop() -> Result<(), ()> {
+    if STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
+        return Err(()); // already stopped
+    }
+
+    STOP_SIGNAL.get_or_init(Signal::new).signal(true);
+    Ok(())
+}
+
 pub async fn imu_stream<'a>(spawner: Spawner, args: &[Token<'a>]) -> Result<(), ()> {
     if args.len() < 2 {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: imu_stream <start|stop>\n");
         return Err(());
     }
 
-    static STOP_SIGNAL: OnceLock<Signal<NoopRawMutex, bool>> = OnceLock::new();
-    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
-    static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
-
     let command = &args[1];
 
     if let Token::String(command) = command
         && *command == "start"
     {
-        // make sure we don't already have a task running
-        if !STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
-            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU stream already running\n");
+        let result = imu_streamer_start(spawner).await;
+
+        if let Err(()) = result {
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to start IMU stream\n");
             return Err(());
         }
-
-        spawner
-            .spawn(imu_stream_task(stop_signal, &STOPPED_SIGNAL))
-            .unwrap();
 
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU stream started\n");
     } else if let Token::String(command) = command
         && *command == "stop"
     {
-        if STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
-            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"IMU stream not running\n");
+        let result = imu_streamer_stop().await;
+
+        if let Err(()) = result {
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to stop IMU stream\n");
             return Err(());
         }
-
-        stop_signal.signal(true);
     } else {
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: imu_stream <start|stop>\n");
         return Err(());

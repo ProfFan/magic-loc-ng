@@ -411,6 +411,53 @@ static CLIENT_REPORT_CHANNEL: OnceLock<
     embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbClientReport, 1>,
 > = OnceLock::new();
 
+static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
+
+pub async fn uwb_client_start(
+    spawner_core0: Spawner,
+    spawner_core1: SendSpawner,
+) -> Result<(), ()> {
+    if !STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"UWB client already running\n");
+        return Err(());
+    }
+
+    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
+    let stop_signal_streamer = STOP_SIGNAL_STREAMER.get_or_init(Signal::new);
+    let report_channel = CLIENT_REPORT_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
+
+    spawner_core1
+        .spawn(uwb_client_task(
+            stop_signal,
+            &STOPPED_SIGNAL,
+            report_channel,
+        ))
+        .unwrap();
+
+    spawner_core0
+        .spawn(uwb_client_streamer_task(
+            stop_signal_streamer,
+            &STOPPED_SIGNAL, // TODO: use a different signal?
+            report_channel,
+        ))
+        .unwrap();
+
+    Ok(())
+}
+
+pub async fn uwb_client_stop() -> Result<(), ()> {
+    if STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"UWB client not running\n");
+        return Err(());
+    }
+
+    STOP_SIGNAL.get_or_init(Signal::new).signal(true);
+    STOP_SIGNAL_STREAMER.get_or_init(Signal::new).signal(true);
+    Ok(())
+}
+
 /// Controller for the UWB client application
 pub async fn uwb_client<'a>(
     spawner_core0: Spawner,
@@ -418,17 +465,9 @@ pub async fn uwb_client<'a>(
     args: &[Token<'a>],
 ) -> Result<(), ()> {
     if args.len() < 2 {
-        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_master <start|stop>\n");
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_client <start|stop>\n");
         return Err(());
     }
-
-    static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
-    let stop_signal = STOP_SIGNAL.get_or_init(Signal::new);
-    static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
-    let stop_signal_streamer = STOP_SIGNAL_STREAMER.get_or_init(Signal::new);
-    static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
-
-    let report_channel = CLIENT_REPORT_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
 
     let command = &args[1];
 
@@ -441,35 +480,25 @@ pub async fn uwb_client<'a>(
             return Err(());
         }
 
-        spawner_core1
-            .spawn(uwb_client_task(
-                stop_signal,
-                &STOPPED_SIGNAL,
-                report_channel,
-            ))
-            .unwrap();
+        let result = uwb_client_start(spawner_core0, spawner_core1).await;
 
-        spawner_core0
-            .spawn(uwb_client_streamer_task(
-                stop_signal_streamer,
-                &STOPPED_SIGNAL, // TODO: use a different signal?
-                report_channel,
-            ))
-            .unwrap();
+        if let Err(()) = result {
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to start UWB client\n");
+            return Err(());
+        }
 
         let _ = esp_fast_serial::write_to_usb_serial_buffer(b"UWB client started\n");
     } else if let Token::String(command) = command
         && *command == "stop"
     {
-        if STOPPED_SIGNAL.load(core::sync::atomic::Ordering::Acquire) {
-            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"UWB client not running\n");
+        let result = uwb_client_stop().await;
+
+        if let Err(()) = result {
+            let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Failed to stop UWB client\n");
             return Err(());
         }
-
-        stop_signal.signal(true);
-        stop_signal_streamer.signal(true);
     } else {
-        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_master <start|stop>\n");
+        let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Usage: uwb_client <start|stop>\n");
         return Err(());
     }
 
