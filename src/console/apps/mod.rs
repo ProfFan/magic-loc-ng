@@ -28,6 +28,9 @@ pub use uwb_master::uwb_master;
 pub mod uwb_client;
 pub use uwb_client::uwb_client;
 
+pub mod battery;
+pub use battery::battery_config;
+
 pub async fn free<'a>(_: &[Token<'a>]) -> Result<(), ()> {
     let free_mem = esp_alloc::HEAP.free();
     let _ = esp_fast_serial::write_to_usb_serial_buffer(

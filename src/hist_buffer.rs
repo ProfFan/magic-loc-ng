@@ -41,7 +41,7 @@ use bytemuck::AnyBitPattern;
 #[repr(C)]
 pub struct HistoryBuffer<T: AnyBitPattern, const N: usize> {
     data: [MaybeUninit<T>; N],
-    write_at: usize,
+    write_at: u32,
     filled: bool,
 }
 
@@ -140,9 +140,9 @@ where
 impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// Returns the current fill level of the buffer.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u32 {
         if self.filled {
-            N
+            N as u32
         } else {
             self.write_at
         }
@@ -151,17 +151,17 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     /// Returns the capacity of the buffer, which is the length of the
     /// underlying backing array.
     #[inline]
-    pub fn capacity(&self) -> usize {
-        N
+    pub fn capacity(&self) -> u32 {
+        N as u32
     }
 
     /// Writes an element to the buffer, overwriting the oldest value.
     pub fn write(&mut self, t: T) {
         if self.filled {
             // Drop the old before we overwrite it.
-            unsafe { ptr::drop_in_place(self.data[self.write_at].as_mut_ptr()) }
+            unsafe { ptr::drop_in_place(self.data[self.write_at as usize].as_mut_ptr()) }
         }
-        self.data[self.write_at] = MaybeUninit::new(t);
+        self.data[self.write_at as usize] = MaybeUninit::new(t);
 
         self.write_at += 1;
         if self.write_at == self.capacity() {
@@ -200,19 +200,19 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
     pub fn recent(&self) -> Option<&T> {
         if self.write_at == 0 {
             if self.filled {
-                Some(unsafe { &*self.data[self.capacity() - 1].as_ptr() })
+                Some(unsafe { &*self.data[self.capacity() as usize - 1].as_ptr() })
             } else {
                 None
             }
         } else {
-            Some(unsafe { &*self.data[self.write_at - 1].as_ptr() })
+            Some(unsafe { &*self.data[self.write_at as usize - 1].as_ptr() })
         }
     }
 
     /// Returns the array slice backing the buffer, without keeping track
     /// of the write position. Therefore, the element order is unspecified.
     pub fn as_slice(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const _, self.len()) }
+        unsafe { slice::from_raw_parts(self.data.as_ptr() as *const _, self.len() as usize) }
     }
 
     /// Returns a pair of slices which contain, in order, the contents of the buffer.
@@ -234,7 +234,10 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
         if !self.filled {
             (buffer, &[])
         } else {
-            (&buffer[self.write_at..], &buffer[..self.write_at])
+            (
+                &buffer[self.write_at as usize..],
+                &buffer[..self.write_at as usize],
+            )
         }
     }
 
@@ -257,7 +260,7 @@ impl<T: AnyBitPattern, const N: usize> HistoryBuffer<T, N> {
         if self.filled {
             OldestOrdered {
                 buf: self,
-                cur: self.write_at,
+                cur: self.write_at as usize,
                 wrapped: false,
             }
         } else {
@@ -314,7 +317,7 @@ impl<T: AnyBitPattern, const N: usize> Drop for HistoryBuffer<T, N> {
         unsafe {
             ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
                 self.data.as_mut_ptr() as *mut T,
-                self.len(),
+                self.len() as usize,
             ))
         }
     }
@@ -371,13 +374,13 @@ impl<'a, T: AnyBitPattern, const N: usize> Iterator for OldestOrdered<'a, T, N> 
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {
-        if self.cur == self.buf.len() && self.buf.filled {
+        if self.cur == self.buf.len() as usize && self.buf.filled {
             // roll-over
             self.cur = 0;
             self.wrapped = true;
         }
 
-        if self.cur == self.buf.write_at && self.wrapped {
+        if self.cur == self.buf.write_at as usize && self.wrapped {
             return None;
         }
 

@@ -8,7 +8,7 @@ use esp_hal::gpio::Output;
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
-use esp_hal::{dma, Blocking};
+use esp_hal::Blocking;
 
 use crate::configuration::ConfigurationStore;
 
@@ -17,7 +17,7 @@ use crate::configuration::ConfigurationStore;
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,
-    _dma_channel: dma::ChannelCreator<0>,
+    _dma_channel: esp_hal::dma::AnyGdmaChannel,
     spi: Spi<'static, Blocking, SPI2>,
     imu_pub: thingbuf::mpsc::StaticSender<icm426xx::fifo::FifoPacket4>,
 ) {

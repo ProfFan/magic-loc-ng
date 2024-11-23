@@ -16,6 +16,15 @@ pub enum Token<'a> {
     Quoted(&'a str),
 }
 
+impl<'a> Token<'a> {
+    pub fn as_str(&self) -> &'a str {
+        match self {
+            Token::String(s) => s,
+            Token::Quoted(s) => s,
+        }
+    }
+}
+
 pub fn parse_arguments<'a>(command: &'a str) -> heapless::Vec<Token<'a>, 16> {
     let mut tokens = heapless::Vec::<Token<'a>, 16>::new();
 
@@ -166,6 +175,9 @@ pub async fn console(
                 }
                 "reset" => {
                     let _ = apps::reset(&tokens).await;
+                }
+                "battery" => {
+                    let _ = apps::battery_config(&tokens).await;
                 }
                 _ => {
                     let _ = esp_fast_serial::write_to_usb_serial_buffer(b"Unknown command\n");

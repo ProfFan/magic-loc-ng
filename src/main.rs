@@ -48,11 +48,7 @@ use esp_hal::{
         master::{Spi, SpiDmaBus},
         SpiMode,
     },
-    timer::{
-        systimer::{SystemTimer, Target},
-        timg::TimerGroup,
-        AnyTimer, OneShotTimer,
-    },
+    timer::{systimer::SystemTimer, timg::TimerGroup, AnyTimer, OneShotTimer},
     Async, Blocking,
 };
 use esp_wifi::{self};
@@ -84,24 +80,30 @@ impl Dw3000Device {
 }
 
 static DW3000: OnceLock<Mutex<CriticalSectionRawMutex, Dw3000Device>> = OnceLock::new();
-
-// static UWB_DEVICE: OnceLock<
-//     Mutex<CriticalSectionRawMutex, ranging::uwb_driver::Device<'static, 127>>,
-// > = OnceLock::new();
+static BMS_I2C: OnceLock<
+    Mutex<
+        CriticalSectionRawMutex,
+        esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C0>,
+    >,
+> = OnceLock::new();
 
 #[main]
 async fn main(spawner: Spawner) {
     let mut hal_config = esp_hal::Config::default();
     hal_config.cpu_clock = esp_hal::clock::CpuClock::Clock240MHz;
+    hal_config.psram = esp_hal::psram::PsramConfig::default();
 
     let peripherals = esp_hal::init(hal_config);
+
+    let (start, size) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
+    defmt::info!("PSRAM start: {:x}, size: {}", start, size);
 
     let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
-    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
+    let systimer = SystemTimer::new(peripherals.SYSTIMER);
     let timer2: AnyTimer = systimer.alarm0.into();
     let timer3: AnyTimer = systimer.alarm1.into();
     static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 4]> = StaticCell::new();
@@ -199,7 +201,7 @@ async fn main(spawner: Spawner) {
     let bms_sda = peripherals.GPIO1;
     let bms_scl = peripherals.GPIO2;
 
-    let mut bms_i2c = esp_hal::i2c::master::I2c::new_typed(
+    let mut bms_i2c = esp_hal::i2c::master::I2c::<'static, _, _>::new_typed(
         peripherals.I2C0,
         esp_hal::i2c::master::Config {
             frequency: 100.kHz(),
@@ -218,6 +220,10 @@ async fn main(spawner: Spawner) {
         // .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
         .await
         .ok();
+
+    BMS_I2C
+        .init(Mutex::<CriticalSectionRawMutex, _>::new(bms_i2c))
+        .unwrap_or(());
 
     // --- Display ---
     let display_sda = peripherals.GPIO6;
@@ -281,7 +287,7 @@ async fn main(spawner: Spawner) {
             .spawn(inertial::imu_task(
                 config_store_.clone(),
                 Output::new(imu_cs, Level::High),
-                dma_channel,
+                dma_channel.degrade(),
                 spi,
                 imu_pub,
             ))
@@ -319,7 +325,7 @@ async fn main(spawner: Spawner) {
             let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
             let bus = RefCell::new(
-                spi.with_dma(dma_channel.configure(false, DmaPriority::Priority0))
+                spi.with_dma(dma_channel)
                     .with_buffers(dma_rx_buf, dma_tx_buf),
             );
             // .into_async();
