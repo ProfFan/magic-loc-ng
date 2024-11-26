@@ -9,7 +9,7 @@ resolver = "2"
 [dependencies]
 esp-fast-serial = { version = "0.4.0", path = "../esp-fast-serial" }
 esp-wifi-sys = { version = "0.7.*" }
-icm426xx = { version = "0.2.*", default-features = false, path = "../icm426xx", features = [
+icm426xx = { version = "0.3.*", default-features = false, path = "../icm426xx", features = [
     # "async",
 ] }
 dw3000-ng = { package = "dw3000-ng", version = "1.0.0", default-features = false, features = [
@@ -74,10 +74,11 @@ sequential-storage = { version = "3.0", features = ["defmt-03"] }
 # disabling default-features fixes this
 serde = { version = "1.0.*", default-features = false }
 binrw = { version = "0.14.0", default-features = false }
-bytemuck = "1.20.*"
+bytemuck = "1.19.*"
 bstr = { version = "1.*", default-features = false }
+bitbybit = { version = "1.3", default-features = false }
 
-critical-section = { version = "1.1.2", default-features = false }
+critical-section = { version = "1.2.*", default-features = false }
 
 # log = { version = "0.4.18" }
 defmt = { package = "defmt", version = "0.3.8", features = ["encoding-rzcobs"] }
@@ -103,13 +104,13 @@ heapless = { version = "0.8", default-features = false, features = [
     "defmt-03",
 ] }
 embassy-executor = { version = "0.6.*", features = ["nightly"] }
-embassy-time = { version = "0.3.*", features = [
+embassy-time = { version = "0.3.2", features = [
     "defmt",
     # "generic-queue-16",
     # "tick-hz-16_000_000",
 ] }
 embassy-futures = "*"
-embassy-sync = "0.6.1"
+embassy-sync = "0.6.0"
 embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
 embassy-net = { version = "0.4.0", features = [
     "defmt",
@@ -123,7 +124,7 @@ embassy-net-driver-channel = "0.3.0"
 scopeguard = { version = "^1.2.0", default-features = false }
 
 esp-partition-table = "~0.1"
-arbitrary-int = "^1.2"
+arbitrary-int = { version = "^1.2", features = ["defmt"] }
 
 anyhow = { version = "1.0", default-features = false }
 
@@ -174,14 +175,14 @@ esp-hal = { path = "../esp-hal/esp-hal", package = "esp-hal" }
 esp-hal-embbassy = { path = "../esp-hal/esp-hal-embassy", package = "esp-hal-embassy" }
 esp-metadata = { path = "../esp-hal/esp-metadata", package = "esp-metadata" }
 esp-alloc = { path = "../esp-hal/esp-alloc", package = "esp-alloc" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-net" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-time" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-time-driver" }
-embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-time-queue-driver" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-net-driver-channel" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-executor" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-futures" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-sync" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "c9abff53d77dfc71deb597ce93f358e25588775a", package = "embassy-embedded-hal" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-net" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time-driver" }
+embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time-queue-driver" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-net-driver-channel" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-executor" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-futures" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-sync" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-embedded-hal" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
 dw3000-ng = { path = "../dw3000" }

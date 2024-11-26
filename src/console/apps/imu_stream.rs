@@ -18,6 +18,8 @@ pub struct IMUPacket {
     pub origin: [u8; 4],
     /// Timestamp in microseconds
     pub timestamp: u64,
+    /// Sample number
+    pub sample_num: u64,
     /// FIFO packets
     pub packets: HistoryBuffer<icm426xx::fifo::FifoPacket4, IMU_PACKET_HISTORY_SIZE>,
 }
@@ -49,6 +51,7 @@ pub async fn imu_stream_task(
         header: *b"MIMU",
         origin: [0; 4],
         timestamp: 0,
+        sample_num: 0,
         packets: HistoryBuffer::new(),
     };
 
@@ -81,7 +84,8 @@ pub async fn imu_stream_task(
 
     socket.bind(source_endpoint).unwrap();
 
-    let mut records_written = 0;
+    let mut records_written: u64 = 0;
+    let mut sample_idx: u64 = 0;
 
     loop {
         if stop_signal.signaled() {
@@ -97,8 +101,10 @@ pub async fn imu_stream_task(
         wire_packet.timestamp = embassy_time::Instant::now().as_micros();
         wire_packet.packets.write(imu_packet);
         records_written += 1;
+        sample_idx += 1;
+        wire_packet.sample_num = sample_idx;
 
-        if records_written >= IMU_PACKET_HISTORY_SIZE / 3 {
+        if records_written >= (IMU_PACKET_HISTORY_SIZE / 3) as u64 {
             let wire_packet_bytes = unsafe {
                 core::mem::transmute::<&IMUPacket, &[u8; core::mem::size_of::<IMUPacket>()]>(
                     &wire_packet,

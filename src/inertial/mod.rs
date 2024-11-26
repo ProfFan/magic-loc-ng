@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Duration, Ticker, Timer};
-use esp_hal::gpio::Output;
+use esp_hal::gpio::{Input, Output};
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
@@ -17,7 +17,8 @@ use crate::configuration::ConfigurationStore;
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,
-    _dma_channel: esp_hal::dma::AnyGdmaChannel,
+    mut int_input: Input<'static>,
+    // _dma_channel: esp_hal::dma::AnyGdmaChannel,
     spi: Spi<'static, Blocking, SPI2>,
     imu_pub: thingbuf::mpsc::StaticSender<icm426xx::fifo::FifoPacket4>,
 ) {
@@ -55,6 +56,8 @@ pub async fn imu_task(
 
     Timer::after_secs(1).await;
 
+    defmt::info!("Initializing ICM");
+
     let mut icm = icm.initialize(Delay).unwrap();
 
     let mut bank = icm.ll().bank::<{ icm426xx::register_bank::BANK0 }>();
@@ -68,8 +71,79 @@ pub async fn imu_task(
 
     defmt::info!("AFSR: {:b}", afsr.unwrap().afsr());
 
-    let mut ticker = Ticker::every(Duration::from_hz(1000));
+    // Switch to bank 2 from bank 0
+    icm.ll()
+        .bank::<0>()
+        .reg_bank_sel()
+        .write(|r| r.bank_sel(2))
+        .unwrap();
+    icm.ll().set_bank(2);
+
+    // Set Accelerometer Anti-Aliasing Filter
+    icm.ll()
+        .bank::<2>()
+        .accel_config_static2()
+        .modify(|_, w| w.accel_aaf_delt(7)) // 303 Hz 3dB Bandwidth
+        .unwrap();
+    icm.ll()
+        .bank::<2>()
+        .accel_config_static3()
+        .modify(|_, w| w.accel_aaf_deltsqr_7_0(49)) // 303 Hz 3dB Bandwidth
+        .unwrap();
+    icm.ll()
+        .bank::<2>()
+        .accel_config_static4()
+        .modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(9)) // 303 Hz 3dB Bandwidth
+        .unwrap();
+
+    // Switch to bank 1
+    icm.ll()
+        .bank::<2>()
+        .reg_bank_sel()
+        .write(|r| r.bank_sel(1))
+        .unwrap();
+    icm.ll().set_bank(1);
+
+    // Set Pin 9 of the ICM to CLKIN
+    icm.ll()
+        .bank::<1>()
+        .intf_config5()
+        .modify(|_, w| w.pin9_function(0b10))
+        .unwrap();
+
+    // Switch to bank 0
+    icm.ll()
+        .bank::<1>()
+        .reg_bank_sel()
+        .write(|r| r.bank_sel(0))
+        .unwrap();
+    icm.ll().set_bank(0);
+
+    // Set RTC_MODE to 1
+    icm.ll()
+        .bank::<0>()
+        .intf_config1()
+        .modify(|_, w| w.rtc_mode(1))
+        .unwrap();
+
+    // Set FIFO watermark to 1 packet
+    icm.ll()
+        .bank::<0>()
+        .fifo_config2()
+        .modify(|_, w| w.fifo_wm_7_0(1))
+        .unwrap();
+
+    // Enable interrupt
+    icm.ll()
+        .bank::<0>()
+        .int_source0()
+        .modify(|_, w| w.fifo_ths_int1_en(1))
+        .unwrap();
+
+    // let mut ticker = Ticker::every(Duration::from_hz(1000));
     loop {
+        int_input.wait_for_falling_edge().await;
+
         // No need to check FIFO count since we are reading 3 packets at a time
         // and the sample rate is 1kHz, we will only get 1 packet per read anyway
 
@@ -113,7 +187,5 @@ pub async fn imu_task(
 
             imu_pub.try_send(*packet).unwrap_or(());
         }
-
-        ticker.next().await;
     }
 }

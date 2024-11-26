@@ -42,13 +42,18 @@ use esp_hal::{
     dma_buffers,
     gpio::{Input, Level, Output, Pull},
     interrupt::{self, software::SoftwareInterruptControl},
+    ledc::{LSGlobalClkSource, Ledc, LowSpeed},
     prelude::*,
     rng::Rng,
     spi::{
         master::{Spi, SpiDmaBus},
         SpiMode,
     },
-    timer::{systimer::SystemTimer, timg::TimerGroup, AnyTimer, OneShotTimer},
+    timer::{
+        systimer::{SystemTimer, Target},
+        timg::TimerGroup,
+        AnyTimer, OneShotTimer,
+    },
     Async, Blocking,
 };
 use esp_wifi::{self};
@@ -91,19 +96,23 @@ static BMS_I2C: OnceLock<
 async fn main(spawner: Spawner) {
     let mut hal_config = esp_hal::Config::default();
     hal_config.cpu_clock = esp_hal::clock::CpuClock::Clock240MHz;
-    hal_config.psram = esp_hal::psram::PsramConfig::default();
+    // hal_config.psram = esp_hal::psram::PsramConfig {
+    //     flash_frequency: esp_hal::psram::FlashFreq::FlashFreq80m,
+    //     ram_frequency: esp_hal::psram::SpiRamFreq::Freq80m,
+    //     ..Default::default()
+    // };
 
     let peripherals = esp_hal::init(hal_config);
 
-    let (start, size) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
-    defmt::info!("PSRAM start: {:x}, size: {}", start, size);
+    // let (start, size) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
+    // defmt::info!("PSRAM start: {:x}, size: {}", start, size);
 
     let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
-    let systimer = SystemTimer::new(peripherals.SYSTIMER);
+    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
     let timer2: AnyTimer = systimer.alarm0.into();
     let timer3: AnyTimer = systimer.alarm1.into();
     static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 4]> = StaticCell::new();
@@ -163,6 +172,8 @@ async fn main(spawner: Spawner) {
     let mosi = peripherals.GPIO40;
     let miso = peripherals.GPIO47;
     let imu_cs = peripherals.GPIO34;
+    let imu_int = peripherals.GPIO48;
+    let imu_clkin = peripherals.GPIO41;
     let baro_cs = peripherals.GPIO11;
 
     // Prevent the barometer from operating in I2C mode
@@ -201,7 +212,7 @@ async fn main(spawner: Spawner) {
     let bms_sda = peripherals.GPIO1;
     let bms_scl = peripherals.GPIO2;
 
-    let mut bms_i2c = esp_hal::i2c::master::I2c::<'static, _, _>::new_typed(
+    let bms_i2c = esp_hal::i2c::master::I2c::<'static, _, _>::new_typed(
         peripherals.I2C0,
         esp_hal::i2c::master::Config {
             frequency: 100.kHz(),
@@ -211,15 +222,15 @@ async fn main(spawner: Spawner) {
     .with_sda(bms_sda)
     .with_scl(bms_scl)
     .into_async();
-    let mut reg07 = [0u8; 1];
+    // let mut reg07 = [0u8; 1];
 
-    // Register 0x07, 1 byte
-    bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
-    bms_i2c
-        .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
-        // .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
-        .await
-        .ok();
+    // // Register 0x07, 1 byte
+    // bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
+    // bms_i2c
+    //     .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
+    //     // .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
+    //     .await
+    //     .ok();
 
     BMS_I2C
         .init(Mutex::<CriticalSectionRawMutex, _>::new(bms_i2c))
@@ -266,6 +277,28 @@ async fn main(spawner: Spawner) {
     .with_miso(miso)
     .with_mosi(mosi);
 
+    // LEDC for IMU 32kHz clock
+    let mut ledc = Ledc::new(peripherals.LEDC);
+    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
+
+    let mut lstimer0 = ledc.timer::<LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
+    lstimer0
+        .configure(esp_hal::ledc::timer::config::Config {
+            duty: esp_hal::ledc::timer::config::Duty::Duty9Bit,
+            clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
+            frequency: 32.kHz(),
+        })
+        .unwrap();
+
+    let mut channel0 = ledc.channel(esp_hal::ledc::channel::Number::Channel0, imu_clkin);
+    channel0
+        .configure(esp_hal::ledc::channel::config::Config {
+            timer: &lstimer0,
+            duty_pct: 50,
+            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
+        })
+        .unwrap();
+
     let imu_pubsub_ = thingbuf::mpsc::StaticChannel::<icm426xx::fifo::FifoPacket4, 3>::new();
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
@@ -287,7 +320,8 @@ async fn main(spawner: Spawner) {
             .spawn(inertial::imu_task(
                 config_store_.clone(),
                 Output::new(imu_cs, Level::High),
-                dma_channel.degrade(),
+                Input::new(imu_int, Pull::Up),
+                // dma_channel.configure(false, DmaPriority::Priority0).,
                 spi,
                 imu_pub,
             ))
@@ -325,7 +359,7 @@ async fn main(spawner: Spawner) {
             let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
             let bus = RefCell::new(
-                spi.with_dma(dma_channel)
+                spi.with_dma(dma_channel.configure(false, DmaPriority::Priority0))
                     .with_buffers(dma_rx_buf, dma_tx_buf),
             );
             // .into_async();
