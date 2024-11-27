@@ -38,7 +38,8 @@
                 // "adapter serial DC:54:75:EF:A2:2C",
             ],
             "serverpath": "${env:HOME}/.espressif/tools/openocd-esp32/v0.12.0-esp32-20230419/openocd-esp32/bin/openocd", //!MODIFY
-            "gdbPath": "${env:HOME}/.espressif/tools/xtensa-esp-elf-gdb/12.1_20221002/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb", //!MODIFY
+            // "gdbPath": "${env:HOME}/.espressif/tools/xtensa-esp-elf-gdb/12.1_20221002/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb", //!MODIFY
+            "gdbPath": "${workspaceFolder}/scripts/rust-gdb-esp",
             "armToolchainPath": "${env:HOME}/.espressif/tools/xtensa-esp32s3-elf/esp-12.2.0_20230208/xtensa-esp32s3-elf/bin",
             "configFiles": [
                 "board/esp32s3-builtin.cfg"

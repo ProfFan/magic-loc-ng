@@ -104,13 +104,13 @@ heapless = { version = "0.8", default-features = false, features = [
     "defmt-03",
 ] }
 embassy-executor = { version = "0.6.*", features = ["nightly"] }
-embassy-time = { version = "0.3.2", features = [
+embassy-time = { version = "0.3", features = [
     "defmt",
     # "generic-queue-16",
     # "tick-hz-16_000_000",
 ] }
-embassy-futures = "*"
-embassy-sync = "0.6.0"
+embassy-futures = "0.1"
+embassy-sync = "0.6.1"
 embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
 embassy-net = { version = "0.4.0", features = [
     "defmt",
@@ -119,7 +119,7 @@ embassy-net = { version = "0.4.0", features = [
     "medium-ethernet",
     "udp",
 ] }
-embassy-net-driver-channel = "0.3.0"
+embassy-net-driver-channel = "0.3"
 
 scopeguard = { version = "^1.2.0", default-features = false }
 
@@ -175,14 +175,14 @@ esp-hal = { path = "../esp-hal/esp-hal", package = "esp-hal" }
 esp-hal-embbassy = { path = "../esp-hal/esp-hal-embassy", package = "esp-hal-embassy" }
 esp-metadata = { path = "../esp-hal/esp-metadata", package = "esp-metadata" }
 esp-alloc = { path = "../esp-hal/esp-alloc", package = "esp-alloc" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-net" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time-driver" }
-embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-time-queue-driver" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-net-driver-channel" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-executor" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-futures" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-sync" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "227e073fca97bcbcec42d9705e0a8ef19fc433b5", package = "embassy-embedded-hal" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-driver" }
+embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-queue-driver" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net-driver-channel" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-executor" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-futures" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-sync" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-embedded-hal" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
 dw3000-ng = { path = "../dw3000" }

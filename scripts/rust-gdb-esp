@@ -1,0 +1,7 @@
+#!/bin/sh
+# Exit if anything fails
+set -e
+
+export RUST_GDB="$HOME/.espressif/tools/xtensa-esp-elf-gdb/12.1_20221002/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb"
+
+$HOME/.rustup/toolchains/esp/bin/rust-gdb "$@"

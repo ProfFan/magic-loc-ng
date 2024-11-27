@@ -3,7 +3,7 @@ use core::cell::{OnceCell, RefCell};
 use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
-use embassy_time::{Delay, Duration, Ticker, Timer};
+use embassy_time::{Delay, Timer};
 use esp_hal::gpio::{Input, Output};
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;

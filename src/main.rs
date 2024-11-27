@@ -49,11 +49,7 @@ use esp_hal::{
         master::{Spi, SpiDmaBus},
         SpiMode,
     },
-    timer::{
-        systimer::{SystemTimer, Target},
-        timg::TimerGroup,
-        AnyTimer, OneShotTimer,
-    },
+    timer::{systimer::SystemTimer, timg::TimerGroup, AnyTimer, OneShotTimer},
     Async, Blocking,
 };
 use esp_wifi::{self};
@@ -112,17 +108,10 @@ async fn main(spawner: Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
-    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<Target>();
+    let systimer = SystemTimer::new(peripherals.SYSTIMER);
     let timer2: AnyTimer = systimer.alarm0.into();
     let timer3: AnyTimer = systimer.alarm1.into();
-    static TIMERS_STATIC: StaticCell<[OneShotTimer<'static, AnyTimer>; 4]> = StaticCell::new();
-    let timers = TIMERS_STATIC.init([
-        OneShotTimer::new(timer0),
-        OneShotTimer::new(timer1),
-        OneShotTimer::new(timer2),
-        OneShotTimer::new(timer3),
-    ]);
-    esp_hal_embassy::init(timers);
+    esp_hal_embassy::init([timer0, timer1, timer2, timer3]);
 
     esp_alloc::heap_allocator!(128 * 1024);
 
@@ -262,8 +251,8 @@ async fn main(spawner: Spawner) {
     spawner.spawn(display::display_task(display_i2c)).unwrap();
 
     // --- IMU ---
-    let dma = Dma::new(peripherals.DMA);
-    let dma_channel = dma.channel0;
+    // let dma = Dma::new(peripherals.DMA);
+    let dma_channel = peripherals.DMA_CH0;
 
     let spi = Spi::new_typed_with_config(
         peripherals.SPI2,
@@ -352,14 +341,14 @@ async fn main(spawner: Spawner) {
             .with_miso(dw_miso)
             .with_mosi(dw_mosi);
 
-            let dma_channel = dma.channel1;
+            let dma_channel = peripherals.DMA_CH1;
 
             let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
             let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
             let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
             let bus = RefCell::new(
-                spi.with_dma(dma_channel.configure(false, DmaPriority::Priority0))
+                spi.with_dma(dma_channel)
                     .with_buffers(dma_rx_buf, dma_tx_buf),
             );
             // .into_async();
