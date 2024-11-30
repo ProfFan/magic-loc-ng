@@ -2,7 +2,9 @@ use core::sync::atomic::AtomicBool;
 
 use crate::hist_buffer::HistoryBuffer;
 use embassy_executor::Spawner;
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, signal::Signal};
+use embassy_sync::{
+    blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsub::WaitResult, signal::Signal,
+};
 use esp_hal::macros::ram;
 
 use super::Token;
@@ -45,7 +47,7 @@ pub async fn imu_stream_task(
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
-    let imu_sub = crate::IMU_RECEIVER.get().await;
+    let mut imu_sub = crate::IMU_PUBSUB.get().await.subscriber().unwrap();
 
     let mut wire_packet = IMUPacket {
         header: *b"MIMU",
@@ -93,9 +95,12 @@ pub async fn imu_stream_task(
             break;
         }
 
-        let imu_packet = match imu_sub.recv().await {
-            Some(imu_packet) => imu_packet,
-            None => continue,
+        let imu_packet = match imu_sub.next_message().await {
+            WaitResult::Message(imu_packet) => imu_packet,
+            WaitResult::Lagged(_) => {
+                defmt::warn!("IMU stream lagged!!!");
+                continue;
+            }
         };
 
         wire_packet.timestamp = embassy_time::Instant::now().as_micros();

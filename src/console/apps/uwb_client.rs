@@ -258,7 +258,7 @@ pub async fn uwb_client_task(
         let mut report = UwbClientReport {
             poll_rx_time: *rxts_poll.value().to_le_bytes().first_chunk::<5>().unwrap(),
             poll_sequence_number: frame.sequence_number().unwrap_or(0),
-            cpu_rx_time: rx_timestamp_cpu.elapsed().as_micros(),
+            cpu_rx_time: rx_timestamp_cpu.as_micros(),
             address: [0x00, address],
             ..Default::default()
         };
@@ -374,7 +374,7 @@ pub async fn uwb_client_task(
 
                 let (payload, _crc) = frame
                     .payload()
-                    .unwrap()
+                    .unwrap_or(&[0, 0])
                     .split_last_chunk::<2>()
                     .unwrap_or((&[], &[0, 0]));
 

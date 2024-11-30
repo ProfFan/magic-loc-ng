@@ -1,26 +1,32 @@
 use core::cell::{OnceCell, RefCell};
 
+use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Timer};
 use esp_hal::gpio::{Input, Output};
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
+use esp_hal::sync::RawMutex as EspRawMutex;
 use esp_hal::Blocking;
-
-use crate::configuration::ConfigurationStore;
 
 #[embassy_executor::task]
 #[ram]
 pub async fn imu_task(
-    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,
     mut int_input: Input<'static>,
     // _dma_channel: esp_hal::dma::AnyGdmaChannel,
     spi: Spi<'static, Blocking, SPI2>,
-    imu_pub: thingbuf::mpsc::StaticSender<icm426xx::fifo::FifoPacket4>,
+    imu_pubsub: &'static embassy_sync::pubsub::PubSubChannel<
+        esp_hal::sync::RawMutex,
+        icm426xx::fifo::FifoPacket4,
+        3,
+        2,
+        1,
+    >,
 ) {
     defmt::info!("Starting IMU task");
 
@@ -39,6 +45,8 @@ pub async fn imu_task(
     //     .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
     //     .with_buffers(dma_rx_buf, dma_tx_buf)
     //     .into_async();
+
+    let imu_pub = imu_pubsub.publisher().unwrap();
 
     cs_output.set_low();
     Timer::after_millis(1).await;
@@ -185,7 +193,7 @@ pub async fn imu_task(
                 packet.temperature_raw(),
             );
 
-            imu_pub.try_send(*packet).unwrap_or(());
+            imu_pub.publish_immediate(*packet);
         }
     }
 }

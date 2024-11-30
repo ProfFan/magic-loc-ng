@@ -21,11 +21,8 @@ mod utils;
 
 use core::cell::RefCell;
 
-use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    mutex::Mutex,
-    once_lock::OnceLock,
-};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex, once_lock::OnceLock};
+use esp_hal::sync::RawMutex as EspRawMutex;
 use esp_hal_embassy::{Executor, InterruptExecutor};
 use static_cell::StaticCell;
 
@@ -49,7 +46,7 @@ use esp_hal::{
         master::{Spi, SpiDmaBus},
         SpiMode,
     },
-    timer::{systimer::SystemTimer, timg::TimerGroup, AnyTimer, OneShotTimer},
+    timer::{systimer::SystemTimer, timg::TimerGroup, AnyTimer},
     Async, Blocking,
 };
 use esp_wifi::{self};
@@ -57,10 +54,15 @@ use esp_wifi::{self};
 // Stack for the second core
 static mut APP_CORE_STACK: Stack<65536> = Stack::new();
 
-static IMU_PUBSUB: OnceLock<thingbuf::mpsc::StaticChannel<icm426xx::fifo::FifoPacket4, 3>> =
-    OnceLock::new();
-static IMU_RECEIVER: OnceLock<thingbuf::mpsc::StaticReceiver<icm426xx::fifo::FifoPacket4>> =
-    OnceLock::new();
+static IMU_PUBSUB: OnceLock<
+    embassy_sync::pubsub::PubSubChannel<
+        esp_hal::sync::RawMutex,
+        icm426xx::fifo::FifoPacket4,
+        3,
+        2,
+        1,
+    >,
+> = OnceLock::new();
 
 struct Dw3000Device {
     spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Blocking>, Output<'static>>,
@@ -80,12 +82,9 @@ impl Dw3000Device {
     }
 }
 
-static DW3000: OnceLock<Mutex<CriticalSectionRawMutex, Dw3000Device>> = OnceLock::new();
+static DW3000: OnceLock<Mutex<EspRawMutex, Dw3000Device>> = OnceLock::new();
 static BMS_I2C: OnceLock<
-    Mutex<
-        CriticalSectionRawMutex,
-        esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C0>,
-    >,
+    Mutex<EspRawMutex, esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C0>>,
 > = OnceLock::new();
 
 #[main]
@@ -115,11 +114,8 @@ async fn main(spawner: Spawner) {
 
     esp_alloc::heap_allocator!(128 * 1024);
 
-    let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
-        CriticalSectionRawMutex,
-        _,
-    >::new(
-        configuration::ConfigurationStore::new().unwrap()
+    let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<EspRawMutex, _>::new(
+        configuration::ConfigurationStore::new().unwrap(),
     ));
 
     config_store
@@ -222,7 +218,7 @@ async fn main(spawner: Spawner) {
     //     .ok();
 
     BMS_I2C
-        .init(Mutex::<CriticalSectionRawMutex, _>::new(bms_i2c))
+        .init(Mutex::<EspRawMutex, _>::new(bms_i2c))
         .unwrap_or(());
 
     // --- Display ---
@@ -252,7 +248,7 @@ async fn main(spawner: Spawner) {
 
     // --- IMU ---
     // let dma = Dma::new(peripherals.DMA);
-    let dma_channel = peripherals.DMA_CH0;
+    let _dma_channel = peripherals.DMA_CH0;
 
     let spi = Spi::new_typed_with_config(
         peripherals.SPI2,
@@ -288,7 +284,7 @@ async fn main(spawner: Spawner) {
         })
         .unwrap();
 
-    let imu_pubsub_ = thingbuf::mpsc::StaticChannel::<icm426xx::fifo::FifoPacket4, 3>::new();
+    let imu_pubsub_ = embassy_sync::pubsub::PubSubChannel::new();
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
 
@@ -301,10 +297,6 @@ async fn main(spawner: Spawner) {
             EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
         let spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
 
-        let (imu_pub, imu_sub) = imu_pubsub.split();
-
-        IMU_RECEIVER.init(imu_sub).unwrap();
-
         spawner_l2
             .spawn(inertial::imu_task(
                 config_store_.clone(),
@@ -312,7 +304,7 @@ async fn main(spawner: Spawner) {
                 Input::new(imu_int, Pull::Up),
                 // dma_channel.configure(false, DmaPriority::Priority0).,
                 spi,
-                imu_pub,
+                imu_pubsub,
             ))
             .unwrap();
 
@@ -395,7 +387,7 @@ async fn main(spawner: Spawner) {
             // spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
 
             // UWB_DEVICE
-            //     .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
+            //     .init(Mutex::<EspRawMutex, _>::new(uwb_device))
             //     .unwrap();
         });
     };

@@ -1,12 +1,16 @@
+use core::cell::RefCell;
+
 use alloc::sync::Arc;
-use embassy_futures::select::{select, Either};
+use embassy_futures::{
+    select::{select, Either},
+    yield_now,
+};
 use embassy_net::driver::LinkState;
 use embassy_net_driver_channel as ch;
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, once_lock::OnceLock,
-};
+use embassy_sync::{mutex::Mutex, once_lock::OnceLock};
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
+use esp_hal::sync::RawMutex as EspRawMutex;
 use esp_wifi::{self, wifi::Protocol, EspWifiController};
 
 use embassy_executor::{task, Spawner};
@@ -65,21 +69,26 @@ pub struct Runner<'d, const MTU: usize> {
     ch: ch::Runner<'d, APP_MTU>,
 }
 
-static RX_CHAN: StaticCell<thingbuf::mpsc::StaticChannel<RawPacketBuffer<RAW_SIZE>, 5>> =
-    StaticCell::new();
-static RX_CHAN_SEND: OnceLock<thingbuf::mpsc::StaticSender<RawPacketBuffer<RAW_SIZE>>> =
-    OnceLock::new();
+static RX_BUFFER: StaticCell<[RawPacketBuffer<RAW_SIZE>; 5]> = StaticCell::new();
+static RX_CHAN: StaticCell<
+    embassy_sync::zerocopy_channel::Channel<EspRawMutex, RawPacketBuffer<RAW_SIZE>>,
+> = StaticCell::new();
+static RX_CHAN_SEND: OnceLock<
+    RefCell<embassy_sync::zerocopy_channel::Sender<EspRawMutex, RawPacketBuffer<RAW_SIZE>>>,
+> = OnceLock::new();
 
 impl<'d, const MTU: usize> Runner<'d, MTU> {
     #[ram]
     pub async fn run(mut self) {
         let (state_chan, mut rx_chan, mut tx_chan) = self.ch.split();
 
-        let chan = RX_CHAN.init(thingbuf::mpsc::StaticChannel::new());
+        let chan = RX_CHAN.init(embassy_sync::zerocopy_channel::Channel::new(
+            RX_BUFFER.init([RawPacketBuffer::default(); 5]),
+        ));
 
-        let (rx_send, rx_recv) = chan.split();
+        let (rx_send, mut rx_recv) = chan.split();
 
-        RX_CHAN_SEND.get_or_init(|| rx_send);
+        RX_CHAN_SEND.get_or_init(|| RefCell::new(rx_send));
 
         self.sniffer.set_receive_cb(|packet| {
             if packet.frame_type != wifi_promiscuous_pkt_type_t_WIFI_PKT_DATA {
@@ -97,15 +106,16 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
 
                     defmt::debug!("Received data frame: TS = {}, MCS={}, {:?}", packet.rx_cntl.timestamp, packet.rx_cntl.mcs, &data);
 
-                    let rx_chan = RX_CHAN_SEND.try_get().unwrap();
+                    let mut rx_chan = RX_CHAN_SEND.try_get().unwrap().borrow_mut();
 
                     let payload = data.payload.unwrap();
 
                     if let DataFrameReadPayload::Single(payload) = payload {
                         // Copy the data into the channel
-                        if let Ok(mut packet_buf) = rx_chan.try_send_ref() {
+                        if let Some(packet_buf) = rx_chan.try_send() {
                             packet_buf.buf[..payload.len()].copy_from_slice(payload);
                             packet_buf.len = payload.len();
+                            rx_chan.send_done();
                         }
                     }
                 }
@@ -117,15 +127,7 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
 
             loop {
                 let p = rx_chan.rx_buf().await;
-                let rx_buf = rx_recv.recv_ref().await;
-
-                let rx_buf = match rx_buf {
-                    Some(rx_buf) => rx_buf,
-                    None => {
-                        defmt::error!("Failed to receive packet");
-                        continue;
-                    }
-                };
+                let rx_buf = rx_recv.receive().await;
 
                 // Post the packet to the rx_chan
                 if p.len() >= rx_buf.len {
@@ -134,6 +136,7 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                     defmt::error!("Packet buffer too small: {} < {}", p.len(), rx_buf.len);
                 }
                 rx_chan.rx_done(rx_buf.len);
+                rx_recv.receive_done();
             }
         };
 
@@ -163,7 +166,9 @@ impl<'d, const MTU: usize> Runner<'d, MTU> {
                 {
                     Ok(_) => defmt::debug!("Sent raw frame"),
                     Err(e) => {
-                        defmt::error!("Failed to send raw frame: {:?}", e)
+                        defmt::error!("Failed to send raw frame: {:?}", e);
+                        yield_now().await;
+                        continue;
                     }
                 }
 
@@ -195,7 +200,7 @@ pub static WIFI_STACK: OnceLock<embassy_net::Stack<'static>> = OnceLock::new();
 #[task]
 #[ram]
 pub async fn wifi_driver_task(
-    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
     wifi_ctrl: EspWifiController<'static>,
     wifi_dev: esp_hal::peripherals::WIFI,
     spawner: Spawner,
@@ -266,6 +271,14 @@ pub async fn wifi_driver_task(
         defmt::info!("Set 11b rate to disabled");
     } else {
         defmt::error!("Failed to set 11b rate");
+    }
+
+    extern "C" {
+        fn rom_set_cca(en: bool, cca_thr: u8);
+    }
+
+    unsafe {
+        rom_set_cca(true, 0xF0);
     }
 
     // if unsafe {

@@ -4,14 +4,15 @@ use super::Token;
 use alloc::sync::Arc;
 use bstr::ByteSlice;
 use core::any::TypeId;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_sync::mutex::Mutex;
+use esp_hal::sync::RawMutex as EspRawMutex;
 
 /// Configuration Set and Get Application
 ///
 /// conf set <key> <value>
 /// conf get <key>
 pub async fn conf<'a>(
-    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
     args: &[Token<'a>],
 ) -> Result<(), ()> {
     if args.len() < 2 {

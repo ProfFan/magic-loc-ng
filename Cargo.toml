@@ -1,6 +1,6 @@
 [package]
 name = "magic-loc-ng"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Fan Jiang <i@fanjiang.me>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -16,7 +16,7 @@ dw3000-ng = { package = "dw3000-ng", version = "1.0.0", default-features = false
     "defmt",
     # "async",
 ] }
-magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
+# magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
 embedded-graphics = { version = "0.8.0" }
 display-interface-i2c = "^0.5"
@@ -60,7 +60,7 @@ esp-println = { version = "0.12.*", default-features = false, features = [
 ] }
 
 bbqueue = { version = "0.5.1" }
-thingbuf = { version = "0.1", default-features = false, features = ["static"] }
+# thingbuf = { version = "0.1.6", default-features = false, features = ["static"] } # NOTE: has a bug not waking up
 
 # esp-println = { version = "0.7.1", default-features = false, features = [
 esp-storage = { version = "0.3", features = ["nor-flash"] }
