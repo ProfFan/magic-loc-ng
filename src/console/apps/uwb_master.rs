@@ -9,11 +9,10 @@ use embassy_executor::{SendSpawner, Spawner};
 
 use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use embassy_futures::select::{select, Either};
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
-};
+use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::macros::ram;
+use esp_hal::sync::RawMutex as EspRawMutex;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{console::Token, utils::nonblocking_wait_async};
@@ -114,9 +113,9 @@ pub struct UwbClientReport {
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_master_streamer_task(
-    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_rx: &'static embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbMasterReport, 1>,
+    report_rx: &'static embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -133,9 +132,9 @@ pub async fn uwb_master_streamer_task(
     }
 
     let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut rx_payload_buffer = [0; 1024];
+    let mut rx_payload_buffer = [0; 1500];
     let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut tx_payload_buffer = [0; 1024];
+    let mut tx_payload_buffer = [0; 1500];
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
@@ -180,13 +179,9 @@ pub async fn uwb_master_streamer_task(
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_master_task(
-    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<
-        CriticalSectionRawMutex,
-        UwbMasterReport,
-        1,
-    >,
+    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -408,12 +403,12 @@ pub async fn uwb_master_task(
 }
 
 static MASTER_REPORT_CHANNEL: OnceLock<
-    embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbMasterReport, 1>,
+    embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
 > = OnceLock::new();
 
-static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
 static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
-static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL_STREAMER: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
 
 pub async fn uwb_master_start(
     spawner_core0: Spawner,

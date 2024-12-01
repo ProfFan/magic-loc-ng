@@ -9,7 +9,7 @@ use esp_hal::macros::ram;
 
 use super::Token;
 
-const IMU_PACKET_HISTORY_SIZE: usize = 30;
+const IMU_PACKET_HISTORY_SIZE: usize = 40;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -109,7 +109,7 @@ pub async fn imu_stream_task(
         sample_idx += 1;
         wire_packet.sample_num = sample_idx;
 
-        if records_written >= (IMU_PACKET_HISTORY_SIZE / 3) as u64 {
+        if records_written >= (IMU_PACKET_HISTORY_SIZE / 4) as u64 {
             let wire_packet_bytes = unsafe {
                 core::mem::transmute::<&IMUPacket, &[u8; core::mem::size_of::<IMUPacket>()]>(
                     &wire_packet,

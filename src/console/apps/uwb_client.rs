@@ -8,11 +8,10 @@ use dw3000_ng::{
 use embassy_executor::{SendSpawner, Spawner};
 
 use embassy_futures::select::{select, Either};
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
-};
+use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
+use esp_hal::sync::RawMutex as EspRawMutex;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{
@@ -35,13 +34,9 @@ use super::uwb_master::UwbClientReport;
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_client_streamer_task(
-    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<
-        CriticalSectionRawMutex,
-        UwbClientReport,
-        1,
-    >,
+    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -106,13 +101,9 @@ pub async fn uwb_client_streamer_task(
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_client_task(
-    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<
-        CriticalSectionRawMutex,
-        UwbClientReport,
-        1,
-    >,
+    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -190,8 +181,8 @@ pub async fn uwb_client_task(
         let (len, rxts_poll, quality): (usize, DwInstant, RxQuality) =
             match nonblocking_wait_async(async || receiving.r_wait_buf(&mut buffer), irq).await {
                 Ok(r) => r,
-                _ => {
-                    defmt::error!("Error receiving packet");
+                Err(e) => {
+                    defmt::error!("Error receiving packet: {:?}", e);
                     dw3000 = receiving.finish_receiving().unwrap();
                     continue;
                 }
@@ -218,7 +209,7 @@ pub async fn uwb_client_task(
 
         let (payload, _crc) = frame
             .payload()
-            .unwrap()
+            .unwrap_or(&[0, 0])
             .split_last_chunk::<2>()
             .unwrap_or((&[], &[0, 0]));
 
@@ -408,11 +399,11 @@ pub async fn uwb_client_task(
 }
 
 static CLIENT_REPORT_CHANNEL: OnceLock<
-    embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbClientReport, 1>,
+    embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
 > = OnceLock::new();
 
-static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
-static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL_STREAMER: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
 static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
 
 pub async fn uwb_client_start(

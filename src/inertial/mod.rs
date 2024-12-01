@@ -150,7 +150,7 @@ pub async fn imu_task(
 
     // let mut ticker = Ticker::every(Duration::from_hz(1000));
     loop {
-        int_input.wait_for_falling_edge().await;
+        int_input.wait_for_low().await;
 
         // No need to check FIFO count since we are reading 3 packets at a time
         // and the sample rate is 1kHz, we will only get 1 packet per read anyway

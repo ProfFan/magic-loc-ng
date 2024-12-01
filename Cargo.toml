@@ -25,9 +25,12 @@ ssd1306 = { version = "0.9", git = "https://github.com/rust-embedded-community/s
     "async",
 ] }
 
-esp-hal = { version = "0.22.0", default-features = false, features = ["defmt", "quad-psram"] }
+esp-hal = { version = "0.22.0", default-features = false, features = [
+    "defmt",
+    "quad-psram",
+] }
 # esp32s3 = "0.26.0"
-esp-hal-embassy = { version = "0.5.*", features = ["integrated-timers"] }
+esp-hal-embassy = { version = "0.5.*" } # features = ["integrated-timers"] }
 
 static_cell = { version = "*", features = ["nightly"] }
 embedded-hal = "1.0.0"
@@ -35,13 +38,10 @@ embedded-hal-async = "1.0.0"
 embedded-hal-bus = { version = "0.2", features = ["async"] }
 
 esp-wifi = { version = "0.11.*", default-features = false, features = [
-    # "esp-now",
-    # "async",
     "sniffer",
     # "ps-min-modem",
     "wifi",
     "defmt",
-    # "phy-enable-usb",
     "esp-alloc",
 ] }
 esp-backtrace = { version = "0.14.*", default-features = false, features = [
@@ -49,12 +49,10 @@ esp-backtrace = { version = "0.14.*", default-features = false, features = [
     "exception-handler",
     "defmt",
     "colors",
-    # "halt-cores",
     "custom-halt",
 ] }
 esp-println = { version = "0.12.*", default-features = false, features = [
     "log",
-    # "defmt-espflash",
     "jtag-serial",
     "critical-section",
 ] }
@@ -104,11 +102,7 @@ heapless = { version = "0.8", default-features = false, features = [
     "defmt-03",
 ] }
 embassy-executor = { version = "0.6.*", features = ["nightly"] }
-embassy-time = { version = "0.3", features = [
-    "defmt",
-    # "generic-queue-16",
-    # "tick-hz-16_000_000",
-] }
+embassy-time = { version = "0.3", features = ["defmt", "generic-queue-8"] }
 embassy-futures = "0.1"
 embassy-sync = "0.6.1"
 embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
@@ -134,8 +128,6 @@ mac-parser = { version = "0.1.6", default-features = false }
 
 nb = "1.0"
 menu = "0.6.0"
-# noline = { version = "0.2.0", default-features = false }
-# rhai = { version = "1.19.0", features = ["no_std", "no_optimize", "no_module", "f32_float", "only_i64"], default-features = false }
 
 [profile.dev.package.esp-storage]
 opt-level = 3

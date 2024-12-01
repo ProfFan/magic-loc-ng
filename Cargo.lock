@@ -466,8 +466,6 @@ dependencies = [
  "critical-section",
  "document-features",
  "embassy-executor-macros",
- "embassy-time-driver",
- "embassy-time-queue-driver",
 ]
 
 [[package]]
