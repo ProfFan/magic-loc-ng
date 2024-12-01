@@ -7,7 +7,7 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
-esp-fast-serial = { version = "0.4.0", path = "../esp-fast-serial" }
+esp-fast-serial = { version = "0.5.0" }
 esp-wifi-sys = { version = "0.7.*" }
 icm426xx = { version = "0.3.*", default-features = false, path = "../icm426xx", features = [
     # "async",
