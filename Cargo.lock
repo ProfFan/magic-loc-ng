@@ -192,9 +192,9 @@ checksum = "c3ac9f8b63eca6fd385229b3675f6cc0dc5c8a5c8a54a59d4f52ffd670d87b0c"
 
 [[package]]
 name = "bytemuck"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8334215b81e418a0a7bdb8ef0849474f40bb10c8b71f1c4ed315cff49f32494d"
+checksum = "8b37c88a63ffd85d15b406896cc343916d7cf57838a847b3a6f2ca5d39a5695a"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -421,7 +421,9 @@ dependencies = [
 
 [[package]]
 name = "dw3000-ng"
-version = "1.0.0"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e6a1ad6470373aa05fb85539f7f9f68c7c39af7f23863b3c00195dd8238ea4b"
 dependencies = [
  "byte",
  "defmt",
@@ -803,7 +805,7 @@ name = "esp-backtrace"
 version = "0.14.2"
 dependencies = [
  "defmt",
- "esp-build 0.1.0",
+ "esp-build",
  "esp-println",
  "semihosting",
 ]
@@ -811,17 +813,6 @@ dependencies = [
 [[package]]
 name = "esp-build"
 version = "0.1.0"
-dependencies = [
- "quote",
- "syn 2.0.90",
- "termcolor",
-]
-
-[[package]]
-name = "esp-build"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b94a4b8d74e7cc7baabcca5b2277b41877e039ad9cd49959d48ef94dac7eab4b"
 dependencies = [
  "quote",
  "syn 2.0.90",
@@ -883,7 +874,7 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "enumset",
- "esp-build 0.1.0",
+ "esp-build",
  "esp-config",
  "esp-hal-procmacros",
  "esp-metadata",
@@ -919,7 +910,7 @@ dependencies = [
  "document-features",
  "embassy-executor",
  "embassy-time-driver",
- "esp-build 0.1.0",
+ "esp-build",
  "esp-config",
  "esp-hal",
  "esp-hal-procmacros",
@@ -968,7 +959,7 @@ name = "esp-println"
 version = "0.12.0"
 dependencies = [
  "critical-section",
- "esp-build 0.1.0",
+ "esp-build",
  "log",
  "portable-atomic",
 ]
@@ -984,13 +975,11 @@ dependencies = [
 
 [[package]]
 name = "esp-storage"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b475dc7bd3b5c33718a5e65c9f192ba4493f1244bf696e8b3a8743dff795bc3f"
+version = "0.4.0"
 dependencies = [
  "critical-section",
  "embedded-storage",
- "esp-build 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "esp-build",
 ]
 
 [[package]]
@@ -1021,7 +1010,7 @@ dependencies = [
  "embedded-io-async",
  "enumset",
  "esp-alloc",
- "esp-build 0.1.0",
+ "esp-build",
  "esp-config",
  "esp-hal",
  "esp-metadata",
@@ -1331,9 +1320,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.6.0"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707907fe3c25f5424cce2cb7e1cbcafee6bdbe735ca90ef77c29e84591e5b9da"
+checksum = "62f822373a4fe84d4bb149bf54e584a7f4abec90e072ed49cda0edea5b95471f"
 dependencies = [
  "equivalent",
  "hashbrown",

@@ -12,7 +12,7 @@ esp-wifi-sys = { version = "0.7.*" }
 icm426xx = { version = "0.3.*", default-features = false, path = "../icm426xx", features = [
     # "async",
 ] }
-dw3000-ng = { package = "dw3000-ng", version = "1.0.0", default-features = false, features = [
+dw3000-ng = { package = "dw3000-ng", version = "1.0", default-features = false, features = [
     "defmt",
     # "async",
 ] }
@@ -61,8 +61,8 @@ bbqueue = { version = "0.5.1" }
 # thingbuf = { version = "0.1.6", default-features = false, features = ["static"] } # NOTE: has a bug not waking up
 
 # esp-println = { version = "0.7.1", default-features = false, features = [
-esp-storage = { version = "0.3", features = ["nor-flash"] }
-embedded-storage = "0.3.0"
+esp-storage = { version = "0.4", features = ["nor-flash"] }
+embedded-storage = "0.3"
 embedded-storage-async = "0.4"
 sequential-storage = { version = "3.0", features = ["defmt-03"] }
 
@@ -72,7 +72,7 @@ sequential-storage = { version = "3.0", features = ["defmt-03"] }
 # disabling default-features fixes this
 serde = { version = "1.0.*", default-features = false }
 binrw = { version = "0.14.0", default-features = false }
-bytemuck = "1.19.*"
+bytemuck = "1.20.*"
 bstr = { version = "1.*", default-features = false }
 bitbybit = { version = "1.3", default-features = false }
 
@@ -161,6 +161,7 @@ partition_table = "partitions.csv"
 [patch.crates-io]
 esp-println = { path = "../esp-hal/esp-println", package = "esp-println" }
 esp-backtrace = { path = "../esp-hal/esp-backtrace", package = "esp-backtrace" }
+esp-storage = { path = "../esp-hal/esp-storage", package = "esp-storage" }
 esp-wifi = { path = "../esp-hal/esp-wifi", package = "esp-wifi" }
 # esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "a3e2ed64e9095f120bbcebe6287ddf62760774db", package = "esp-wifi-sys" }
 esp-hal = { path = "../esp-hal/esp-hal", package = "esp-hal" }
@@ -176,5 +177,5 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-futures" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-sync" }
 embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-embedded-hal" }
+# embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-usb-synopsys-otg" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
-dw3000-ng = { path = "../dw3000" }
