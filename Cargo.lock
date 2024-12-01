@@ -1298,6 +1298,8 @@ dependencies = [
 [[package]]
 name = "icm426xx"
 version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67f023ab34420e14988411ba50a77731566dfcf7d39537b0e491a6ee5c7405ac"
 dependencies = [
  "bilge",
  "bytemuck",
