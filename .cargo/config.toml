@@ -21,6 +21,8 @@ ESP_WIFI_PHY_ENABLE_USB = "true"
 
 [build]
 rustflags = [
+    "-Z",
+    "stack-protector=strong",
     "-C",
     "link-arg=-Tlinkall.x",
     # "-C",

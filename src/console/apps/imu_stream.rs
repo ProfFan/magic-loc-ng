@@ -57,7 +57,7 @@ pub async fn imu_stream_task(
         packets: HistoryBuffer::new(),
     };
 
-    let stack = crate::network::WIFI_STACK.get().await;
+    let stack = crate::network::WIFI_STACK.get().await.clone();
     let address = stack.config_v4().unwrap().address;
     wire_packet.origin = address.address().octets();
 
@@ -77,7 +77,7 @@ pub async fn imu_stream_task(
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
-        *stack,
+        stack,
         &mut rx_metadata_buffer,
         &mut rx_payload_buffer,
         &mut tx_metadata_buffer,

@@ -2,26 +2,25 @@ use core::cell::{OnceCell, RefCell};
 
 use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Timer};
 use esp_hal::gpio::{Input, Output};
 use esp_hal::macros::ram;
 use esp_hal::peripherals::SPI2;
 use esp_hal::spi::master::Spi;
-use esp_hal::sync::RawMutex as EspRawMutex;
 use esp_hal::Blocking;
 
 #[embassy_executor::task]
 #[ram]
 pub async fn imu_task(
-    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     mut cs_output: Output<'static>,
     mut int_input: Input<'static>,
     // _dma_channel: esp_hal::dma::AnyGdmaChannel,
     spi: Spi<'static, Blocking, SPI2>,
     imu_pubsub: &'static embassy_sync::pubsub::PubSubChannel<
-        esp_hal::sync::RawMutex,
+        CriticalSectionRawMutex,
         icm426xx::fifo::FifoPacket4,
         3,
         2,
@@ -79,6 +78,14 @@ pub async fn imu_task(
 
     defmt::info!("AFSR: {:b}", afsr.unwrap().afsr());
 
+    // Turn off gyro and accelerometer before changing the configuration
+    // Refer to Section 12.9 of the datasheet
+    icm.ll()
+        .bank::<0>()
+        .pwr_mgmt0()
+        .modify(|_, w| w.accel_mode(0).gyro_mode(0))
+        .unwrap();
+
     // Switch to bank 2 from bank 0
     icm.ll()
         .bank::<0>()
@@ -91,17 +98,17 @@ pub async fn imu_task(
     icm.ll()
         .bank::<2>()
         .accel_config_static2()
-        .modify(|_, w| w.accel_aaf_delt(7)) // 303 Hz 3dB Bandwidth
+        .modify(|_, w| w.accel_aaf_delt(5).accel_aaf_dis(0)) // 213 Hz 3dB Bandwidth
         .unwrap();
     icm.ll()
         .bank::<2>()
         .accel_config_static3()
-        .modify(|_, w| w.accel_aaf_deltsqr_7_0(49)) // 303 Hz 3dB Bandwidth
+        .modify(|_, w| w.accel_aaf_deltsqr_7_0(25)) // 213 Hz 3dB Bandwidth
         .unwrap();
     icm.ll()
         .bank::<2>()
         .accel_config_static4()
-        .modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(9)) // 303 Hz 3dB Bandwidth
+        .modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(10)) // 213 Hz 3dB Bandwidth
         .unwrap();
 
     // Switch to bank 1
@@ -111,6 +118,30 @@ pub async fn imu_task(
         .write(|r| r.bank_sel(1))
         .unwrap();
     icm.ll().set_bank(1);
+
+    icm.ll()
+        .bank::<1>()
+        .gyro_config_static2()
+        .modify(|_, w| w.gyro_aaf_dis(0)) // 258 Hz 3dB Bandwidth
+        .unwrap();
+
+    icm.ll()
+        .bank::<1>()
+        .gyro_config_static3()
+        .modify(|_, w| w.gyro_aaf_delt(6)) // 258 Hz 3dB Bandwidth
+        .unwrap();
+
+    icm.ll()
+        .bank::<1>()
+        .gyro_config_static4()
+        .modify(|_, w| w.gyro_aaf_deltsqr_7_0(36)) // 258 Hz 3dB Bandwidth
+        .unwrap();
+
+    icm.ll()
+        .bank::<1>()
+        .gyro_config_static5()
+        .modify(|_, w| w.gyro_aaf_deltsqr_11_8(0).gyro_aaf_bitshift(10)) // 258 Hz 3dB Bandwidth
+        .unwrap();
 
     // Set Pin 9 of the ICM to CLKIN
     icm.ll()
@@ -147,6 +178,16 @@ pub async fn imu_task(
         .int_source0()
         .modify(|_, w| w.fifo_ths_int1_en(1))
         .unwrap();
+
+    // Turn on gyro and accelerometer
+    icm.ll()
+        .bank::<0>()
+        .pwr_mgmt0()
+        .modify(|_, w| w.accel_mode(0b11).gyro_mode(0b11))
+        .unwrap();
+
+    // Wait 300us for the gyro and accelerometer to be ready
+    Timer::after_micros(300).await;
 
     // let mut ticker = Ticker::every(Duration::from_hz(1000));
     loop {

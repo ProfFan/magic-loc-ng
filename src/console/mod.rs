@@ -1,8 +1,7 @@
 use crate::configuration::ConfigurationStore;
 use alloc::sync::Arc;
 use embassy_executor::{task, SendSpawner, Spawner};
-use embassy_sync::mutex::Mutex;
-use esp_hal::sync::RawMutex as EspRawMutex;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 
 pub mod apps;
 
@@ -80,7 +79,7 @@ async fn test_cpu1() {
 pub async fn console(
     spawner: Spawner,
     spawner_cpu1: SendSpawner,
-    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
 ) {
     let serial_in = esp_fast_serial::reader_take();
 

@@ -21,8 +21,12 @@ mod utils;
 
 use core::cell::RefCell;
 
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex, once_lock::OnceLock};
-use esp_hal::sync::RawMutex as EspRawMutex;
+use embassy_sync::{
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    mutex::Mutex,
+    once_lock::OnceLock,
+};
+use esp_hal::assist_debug::DebugAssist;
 use esp_hal_embassy::{Executor, InterruptExecutor};
 use static_cell::StaticCell;
 
@@ -56,7 +60,7 @@ static mut APP_CORE_STACK: Stack<65536> = Stack::new();
 
 static IMU_PUBSUB: OnceLock<
     embassy_sync::pubsub::PubSubChannel<
-        esp_hal::sync::RawMutex,
+        CriticalSectionRawMutex,
         icm426xx::fifo::FifoPacket4,
         3,
         2,
@@ -82,10 +86,16 @@ impl Dw3000Device {
     }
 }
 
-static DW3000: OnceLock<Mutex<EspRawMutex, Dw3000Device>> = OnceLock::new();
+static DW3000: OnceLock<Mutex<CriticalSectionRawMutex, Dw3000Device>> = OnceLock::new();
 static BMS_I2C: OnceLock<
-    Mutex<EspRawMutex, esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C0>>,
+    Mutex<
+        CriticalSectionRawMutex,
+        esp_hal::i2c::master::I2c<'static, Async, esp_hal::peripherals::I2C0>,
+    >,
 > = OnceLock::new();
+
+static DA: critical_section::Mutex<RefCell<Option<DebugAssist>>> =
+    critical_section::Mutex::new(RefCell::new(None));
 
 #[main]
 async fn main(spawner: Spawner) {
@@ -102,20 +112,45 @@ async fn main(spawner: Spawner) {
     // let (start, size) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
     // defmt::info!("PSRAM start: {:x}, size: {}", start, size);
 
+    let mut da = DebugAssist::new(peripherals.ASSIST_DEBUG);
+    da.set_interrupt_handler(da_interrupt_handler);
+
+    {
+        use core::ptr::addr_of_mut;
+
+        extern "C" {
+            // top of stack
+            static mut _stack_start: u32;
+            // bottom of stack
+            static mut _stack_end: u32;
+        }
+
+        let stack_bottom = addr_of_mut!(_stack_end) as *mut _ as u32;
+        let size = 256;
+
+        da.enable_region0_monitor(stack_bottom, stack_bottom + size, true, true);
+        da.enable_region1_monitor(stack_bottom, stack_bottom + size, true, true);
+    }
+
+    critical_section::with(|cs| DA.borrow_ref_mut(cs).replace(da));
+
     let sw_ints = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
-    let systimer = SystemTimer::new(peripherals.SYSTIMER);
-    let timer2: AnyTimer = systimer.alarm0.into();
-    let timer3: AnyTimer = systimer.alarm1.into();
+    let systimer = SystemTimer::new(peripherals.SYSTIMER).split::<_>();
+    let timer2: AnyTimer = systimer.alarm0.into_target().into();
+    let timer3: AnyTimer = systimer.alarm1.into_target().into();
     esp_hal_embassy::init([timer0, timer1, timer2, timer3]);
 
     esp_alloc::heap_allocator!(128 * 1024);
 
-    let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<EspRawMutex, _>::new(
-        configuration::ConfigurationStore::new().unwrap(),
+    let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
+        CriticalSectionRawMutex,
+        _,
+    >::new(
+        configuration::ConfigurationStore::new().unwrap()
     ));
 
     config_store
@@ -218,7 +253,7 @@ async fn main(spawner: Spawner) {
     //     .ok();
 
     BMS_I2C
-        .init(Mutex::<EspRawMutex, _>::new(bms_i2c))
+        .init(Mutex::<CriticalSectionRawMutex, _>::new(bms_i2c))
         .unwrap_or(());
 
     // --- Display ---
@@ -247,8 +282,8 @@ async fn main(spawner: Spawner) {
     spawner.spawn(display::display_task(display_i2c)).unwrap();
 
     // --- IMU ---
-    // let dma = Dma::new(peripherals.DMA);
-    let _dma_channel = peripherals.DMA_CH0;
+    let dma = Dma::new(peripherals.DMA);
+    // let _dma_channel = peripherals.DMA_CH0;
 
     let spi = Spi::new_typed_with_config(
         peripherals.SPI2,
@@ -333,14 +368,14 @@ async fn main(spawner: Spawner) {
             .with_miso(dw_miso)
             .with_mosi(dw_mosi);
 
-            let dma_channel = peripherals.DMA_CH1;
+            let dma_channel = dma.channel1;
 
             let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
             let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
             let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
 
             let bus = RefCell::new(
-                spi.with_dma(dma_channel)
+                spi.with_dma(dma_channel.configure(false, DmaPriority::Priority0))
                     .with_buffers(dma_rx_buf, dma_tx_buf),
             );
             // .into_async();
@@ -387,7 +422,7 @@ async fn main(spawner: Spawner) {
             // spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
 
             // UWB_DEVICE
-            //     .init(Mutex::<EspRawMutex, _>::new(uwb_device))
+            //     .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
             //     .unwrap();
         });
     };
@@ -455,4 +490,29 @@ async fn main(spawner: Spawner) {
     loop {
         Timer::after_secs(5).await;
     }
+}
+
+#[handler(priority = esp_hal::interrupt::Priority::max())]
+fn da_interrupt_handler() {
+    critical_section::with(|cs| {
+        esp_println::println!("\n\nDEBUG_ASSIST interrupt");
+        let mut da = DA.borrow_ref_mut(cs);
+        let da = da.as_mut().unwrap();
+
+        if da.is_region0_monitor_interrupt_set() {
+            esp_println::println!("REGION0 MONITOR TRIGGERED");
+            da.clear_region0_monitor_interrupt();
+            let pc = da.region_monitor_pc();
+            esp_println::println!("PC = 0x{:x}", pc);
+        }
+
+        if da.is_region1_monitor_interrupt_set() {
+            esp_println::println!("REGION1 MONITOR TRIGGERED");
+            da.clear_region1_monitor_interrupt();
+            let pc = da.region_monitor_pc();
+            esp_println::println!("PC = 0x{:x}", pc);
+        }
+
+        loop {}
+    });
 }

@@ -9,10 +9,10 @@ use embassy_executor::{SendSpawner, Spawner};
 
 use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use embassy_futures::select::{select, Either};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::{once_lock::OnceLock, signal::Signal};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::macros::ram;
-use esp_hal::sync::RawMutex as EspRawMutex;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{console::Token, utils::nonblocking_wait_async};
@@ -113,9 +113,9 @@ pub struct UwbClientReport {
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_master_streamer_task(
-    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_rx: &'static embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
+    report_rx: &'static embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbMasterReport, 1>,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -179,9 +179,13 @@ pub async fn uwb_master_streamer_task(
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_master_task(
-    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
+    report_channel: &'static embassy_sync::channel::Channel<
+        CriticalSectionRawMutex,
+        UwbMasterReport,
+        1,
+    >,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -203,6 +207,7 @@ pub async fn uwb_master_task(
     let dw3000 = dw3000.init().unwrap();
 
     let dwm_config = dw3000_ng::Config {
+        channel: dw3000_ng::configs::UwbChannel::Channel9,
         bitrate: dw3000_ng::configs::BitRate::Kbps6800,
         sts_len: StsLen::StsLen128,
         sts_mode: StsMode::StsMode1,
@@ -246,6 +251,9 @@ pub async fn uwb_master_task(
     loop {
         ticker.next().await;
 
+        let current_sequence_number = sequence_number;
+        sequence_number += 1;
+
         if stop_signal.signaled() {
             stop_signal.reset(); // IMPORTANT: reset the signal so we can re-enter the loop
             break;
@@ -270,13 +278,14 @@ pub async fn uwb_master_task(
         let mut frame = Ieee802154Frame::new_unchecked(&mut buffer);
         FRAME_REPR.emit(&mut frame);
 
-        frame.set_sequence_number(sequence_number);
-        sequence_number += 1;
+        frame.set_sequence_number(current_sequence_number);
 
+        let current_cpu_time = embassy_time::Instant::now();
         let current_dw_time: DwInstant =
             DwInstant::new((dw3000.sys_time().unwrap() as u64) << 8).unwrap();
         let send_time = current_dw_time + DwDuration::from_nanos(1500000); // 1.5ms
         let send_time = DwInstant::new(send_time.value() >> 9 << 9).unwrap();
+        let send_time_cpu = current_cpu_time + Duration::from_nanos(1500000);
 
         let poll_packet = UwbMasterPoll {
             header: b'P',
@@ -302,8 +311,8 @@ pub async fn uwb_master_task(
         }
 
         let mut report = UwbMasterReport {
-            cpu_tx_completion_time: embassy_time::Instant::now().as_micros(),
-            poll_sequence_number: sequence_number,
+            cpu_tx_completion_time: send_time_cpu.as_micros(),
+            poll_sequence_number: current_sequence_number,
             poll_tx_time: *send_time.value().to_le_bytes().first_chunk::<5>().unwrap(),
             ..Default::default()
         };
@@ -353,7 +362,7 @@ pub async fn uwb_master_task(
 
             let (payload, _fcs) = frame
                 .payload()
-                .unwrap()
+                .unwrap_or(&[])
                 .split_last_chunk::<2>()
                 .unwrap_or((&[], &[0, 0]));
 
@@ -403,12 +412,12 @@ pub async fn uwb_master_task(
 }
 
 static MASTER_REPORT_CHANNEL: OnceLock<
-    embassy_sync::channel::Channel<EspRawMutex, UwbMasterReport, 1>,
+    embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbMasterReport, 1>,
 > = OnceLock::new();
 
-static STOP_SIGNAL: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
 static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
-static STOP_SIGNAL_STREAMER: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
 
 pub async fn uwb_master_start(
     spawner_core0: Spawner,

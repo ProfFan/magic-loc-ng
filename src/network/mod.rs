@@ -7,10 +7,11 @@ use embassy_futures::{
 };
 use embassy_net::driver::LinkState;
 use embassy_net_driver_channel as ch;
-use embassy_sync::{mutex::Mutex, once_lock::OnceLock};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, once_lock::OnceLock,
+};
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
-use esp_hal::sync::RawMutex as EspRawMutex;
 use esp_wifi::{self, wifi::Protocol, EspWifiController};
 
 use embassy_executor::{task, Spawner};
@@ -71,10 +72,12 @@ pub struct Runner<'d, const MTU: usize> {
 
 static RX_BUFFER: StaticCell<[RawPacketBuffer<RAW_SIZE>; 5]> = StaticCell::new();
 static RX_CHAN: StaticCell<
-    embassy_sync::zerocopy_channel::Channel<EspRawMutex, RawPacketBuffer<RAW_SIZE>>,
+    embassy_sync::zerocopy_channel::Channel<CriticalSectionRawMutex, RawPacketBuffer<RAW_SIZE>>,
 > = StaticCell::new();
 static RX_CHAN_SEND: OnceLock<
-    RefCell<embassy_sync::zerocopy_channel::Sender<EspRawMutex, RawPacketBuffer<RAW_SIZE>>>,
+    RefCell<
+        embassy_sync::zerocopy_channel::Sender<CriticalSectionRawMutex, RawPacketBuffer<RAW_SIZE>>,
+    >,
 > = OnceLock::new();
 
 impl<'d, const MTU: usize> Runner<'d, MTU> {
@@ -200,7 +203,7 @@ pub static WIFI_STACK: OnceLock<embassy_net::Stack<'static>> = OnceLock::new();
 #[task]
 #[ram]
 pub async fn wifi_driver_task(
-    config_store: Arc<Mutex<EspRawMutex, ConfigurationStore>>,
+    config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
     wifi_ctrl: EspWifiController<'static>,
     wifi_dev: esp_hal::peripherals::WIFI,
     spawner: Spawner,

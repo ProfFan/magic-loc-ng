@@ -8,10 +8,11 @@ use dw3000_ng::{
 use embassy_executor::{SendSpawner, Spawner};
 
 use embassy_futures::select::{select, Either};
-use embassy_sync::{once_lock::OnceLock, signal::Signal};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex, once_lock::OnceLock, signal::Signal,
+};
 use embassy_time::{Duration, Timer};
 use esp_hal::macros::ram;
-use esp_hal::sync::RawMutex as EspRawMutex;
 use smoltcp::wire::{Ieee802154Address, Ieee802154Frame, Ieee802154Repr};
 
 use crate::{
@@ -34,9 +35,13 @@ use super::uwb_master::UwbClientReport;
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_client_streamer_task(
-    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
+    report_channel: &'static embassy_sync::channel::Channel<
+        CriticalSectionRawMutex,
+        UwbClientReport,
+        1,
+    >,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -101,9 +106,13 @@ pub async fn uwb_client_streamer_task(
 #[embassy_executor::task]
 #[ram]
 pub async fn uwb_client_task(
-    stop_signal: &'static embassy_sync::signal::Signal<EspRawMutex, bool>,
+    stop_signal: &'static embassy_sync::signal::Signal<CriticalSectionRawMutex, bool>,
     stopped_signal: &'static core::sync::atomic::AtomicBool,
-    report_channel: &'static embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
+    report_channel: &'static embassy_sync::channel::Channel<
+        CriticalSectionRawMutex,
+        UwbClientReport,
+        1,
+    >,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
@@ -129,6 +138,7 @@ pub async fn uwb_client_task(
     let dw3000 = dw3000.init().unwrap();
 
     let dwm_config = dw3000_ng::Config {
+        channel: dw3000_ng::configs::UwbChannel::Channel9,
         bitrate: dw3000_ng::configs::BitRate::Kbps6800,
         sts_len: StsLen::StsLen128,
         sts_mode: StsMode::StsMode1,
@@ -187,7 +197,18 @@ pub async fn uwb_client_task(
                     continue;
                 }
             };
-        let rx_timestamp_cpu = embassy_time::Instant::now();
+
+        // Get current TS from the device
+        let ts_now = receiving.sys_time().unwrap();
+        let ts_now_cpu = embassy_time::Instant::now();
+        defmt::debug!("RX TS: {:?}, CPU TS: {:?}", ts_now, ts_now_cpu);
+        let ts_diff = DwInstant::new((ts_now as u64) << 8)
+            .unwrap()
+            .duration_since(rxts_poll);
+        defmt::debug!("RX TS diff: {:?}", ts_diff.value());
+        // 1 ns = 63.8976 DW3000 ticks
+        let rx_timestamp_cpu = ts_now_cpu - Duration::from_nanos(ts_diff.value() * 10000 / 638976);
+        defmt::debug!("RX CPU TS: {:?}", rx_timestamp_cpu);
 
         dw3000 = receiving.finish_receiving().unwrap();
 
@@ -213,6 +234,12 @@ pub async fn uwb_client_task(
             .split_last_chunk::<2>()
             .unwrap_or((&[], &[0, 0]));
 
+        if payload.len() < 2 {
+            defmt::debug!("Received invalid payload length: {}", payload.len());
+            continue;
+        }
+
+        // If the first byte is not P, it must be a response
         if payload[0] != b'P' {
             defmt::debug!("Received non-poll packet");
 
@@ -399,11 +426,11 @@ pub async fn uwb_client_task(
 }
 
 static CLIENT_REPORT_CHANNEL: OnceLock<
-    embassy_sync::channel::Channel<EspRawMutex, UwbClientReport, 1>,
+    embassy_sync::channel::Channel<CriticalSectionRawMutex, UwbClientReport, 1>,
 > = OnceLock::new();
 
-static STOP_SIGNAL: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
-static STOP_SIGNAL_STREAMER: OnceLock<Signal<EspRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
+static STOP_SIGNAL_STREAMER: OnceLock<Signal<CriticalSectionRawMutex, bool>> = OnceLock::new();
 static STOPPED_SIGNAL: AtomicBool = AtomicBool::new(true);
 
 pub async fn uwb_client_start(

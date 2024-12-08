@@ -7,11 +7,11 @@ license = "Apache-2.0"
 resolver = "2"
 
 [dependencies]
-esp-fast-serial = { version = "0.5.0" }
+esp-fast-serial = { version = "0.5.0", path = "../esp-fast-serial", features = ["esp32s3"] }
 esp-wifi-sys = { version = "0.7.*" }
 icm426xx = { version = "0.3.*", default-features = false, features = [
     # "async",
-] }
+]}
 dw3000-ng = { package = "dw3000-ng", version = "1.0", default-features = false, features = [
     "defmt",
     # "async",
@@ -48,6 +48,7 @@ esp-backtrace = { version = "0.14.*", default-features = false, features = [
     "panic-handler",
     "exception-handler",
     "defmt",
+    # "println",
     "colors",
     "custom-halt",
 ] }
@@ -82,7 +83,7 @@ critical-section = { version = "1.2.*", default-features = false }
 defmt = { package = "defmt", version = "0.3.8", features = ["encoding-rzcobs"] }
 # defmt-rtt = "0.4.1"
 esp-alloc = { version = "0.5.*" }
-smoltcp = { version = "0.11.0", default-features = false, features = [
+smoltcp = { version = "0.12.0", default-features = false, features = [
     # "proto-igmp",
     "proto-ipv4",
     "socket-tcp",
@@ -106,7 +107,7 @@ embassy-time = { version = "0.3", features = ["defmt", "generic-queue-8"] }
 embassy-futures = "0.1"
 embassy-sync = "0.6.1"
 embassy-embedded-hal = { version = "0.2", features = ["defmt"] }
-embassy-net = { version = "0.4.0", features = [
+embassy-net = { version = "0.5.0", features = [
     "defmt",
     "proto-ipv4",
     "medium-ip",
@@ -159,23 +160,23 @@ default = ["esp32s3"]
 partition_table = "partitions.csv"
 
 [patch.crates-io]
-esp-println = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-println" }
-esp-backtrace = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-backtrace" }
-esp-storage = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-storage" }
-esp-wifi = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-wifi" }
+# esp-println = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-println" }
+# esp-backtrace = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-backtrace" }
+# esp-storage = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-storage" }
+# esp-wifi = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-wifi" }
 # esp-wifi-sys = { git = "https://github.com/esp-rs/esp-wifi-sys", rev = "a3e2ed64e9095f120bbcebe6287ddf62760774db", package = "esp-wifi-sys" }
-esp-hal = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-hal" }
-esp-hal-embbassy = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-hal-embassy" }
-esp-metadata = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-metadata" }
-esp-alloc = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-alloc" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-driver" }
-embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-queue-driver" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net-driver-channel" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-executor" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-futures" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-sync" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-embedded-hal" }
+# esp-hal = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-hal" }
+# esp-hal-embassy = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-hal-embassy" }
+# esp-metadata = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-metadata" }
+# esp-alloc = { git = "https://github.com/ProfFan/esp-hal", rev = "48b8ed0b4fb1065a638a3a74bf497920f2806cb8", package = "esp-alloc" }
+# embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net" }
+# embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time" }
+# embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-driver" }
+# embassy-time-queue-driver = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-time-queue-driver" }
+# embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-net-driver-channel" }
+# embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-executor" }
+# embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-futures" }
+# embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-sync" }
+# embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-embedded-hal" }
 # embassy-usb-synopsys-otg = { git = "https://github.com/embassy-rs/embassy", rev = "0d5cd7d6920f87ee30baada3222cc537dd6f026d", package = "embassy-usb-synopsys-otg" }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
+# smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "fe0b4d102253465850cd1cf39cd33d4721a4a8d5", package = "smoltcp" }
