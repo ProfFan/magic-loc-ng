@@ -1,24 +1,27 @@
-use core::cell::{OnceCell, RefCell};
-
 use crate::configuration::ConfigurationStore;
+use crate::multipin_spi::MultipinSpiDevice;
 use alloc::sync::Arc;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Timer};
+use embedded_hal::spi::Operation;
+use embedded_hal_async::spi::SpiDevice;
 use esp_hal::gpio::{Input, Output};
 use esp_hal::macros::ram;
-use esp_hal::peripherals::SPI2;
-use esp_hal::spi::master::Spi;
-use esp_hal::Blocking;
+use esp_hal::spi::master::SpiDmaBus;
+use esp_hal::Async;
 
 #[embassy_executor::task]
 #[ram]
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
-    mut cs_output: Output<'static>,
+    cs_output: Output<'static>,
     mut int_input: Input<'static>,
     // _dma_channel: esp_hal::dma::AnyGdmaChannel,
-    spi: Spi<'static, Blocking, SPI2>,
+    spi_mutex: &'static Mutex<
+        CriticalSectionRawMutex,
+        SpiDmaBus<'static, Async, esp_hal::peripherals::SPI2>,
+    >,
     imu_pubsub: &'static embassy_sync::pubsub::PubSubChannel<
         CriticalSectionRawMutex,
         icm426xx::fifo::FifoPacket4,
@@ -36,28 +39,20 @@ pub async fn imu_task(
         .register::<u32>(b"IMU_RATE")
         .unwrap();
 
-    // let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(256);
-    // let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-    // let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
-
-    // let spi = spi
-    //     .with_dma(dma_channel.configure(false, DmaPriority::Priority0))
-    //     .with_buffers(dma_rx_buf, dma_tx_buf)
-    //     .into_async();
-
     let imu_pub = imu_pubsub.publisher().unwrap();
 
-    cs_output.set_low();
-    Timer::after_millis(1).await;
-    cs_output.set_high();
-
-    let spi_bus = OnceCell::<embassy_sync::blocking_mutex::Mutex<NoopRawMutex, _>>::new();
-    let _ = spi_bus.set(embassy_sync::blocking_mutex::Mutex::new(RefCell::new(spi)));
-
-    let spidev = embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice::new(
-        spi_bus.get().unwrap(),
+    let peripherals = unsafe { esp_hal::peripherals::Peripherals::steal() };
+    let mut spidev = MultipinSpiDevice::new(
+        spi_mutex,
         cs_output,
+        esp_hal::gpio::InputSignal::FSPIQ,
+        peripherals.GPIO47,
     );
+
+    spidev
+        .transaction(&mut [Operation::DelayNs(1000)])
+        .await
+        .unwrap(); // Assert and deassert CS
 
     let icm = icm426xx::ICM42688::new(spidev);
 
@@ -65,16 +60,16 @@ pub async fn imu_task(
 
     defmt::info!("Initializing ICM");
 
-    let mut icm = icm.initialize(Delay).unwrap();
+    let mut icm = icm.initialize(Delay).await.unwrap();
 
     let mut bank = icm.ll().bank::<{ icm426xx::register_bank::BANK0 }>();
 
     // print WHO_AM_I register
-    let who_am_i = bank.who_am_i().read();
+    let who_am_i = bank.who_am_i().async_read().await;
 
     defmt::info!("WHO_AM_I: {:x}", who_am_i.unwrap().value());
 
-    let afsr = icm.ll().bank::<0>().intf_config1().read();
+    let afsr = icm.ll().bank::<0>().intf_config1().async_read().await;
 
     defmt::info!("AFSR: {:b}", afsr.unwrap().afsr());
 
@@ -83,14 +78,16 @@ pub async fn imu_task(
     icm.ll()
         .bank::<0>()
         .pwr_mgmt0()
-        .modify(|_, w| w.accel_mode(0).gyro_mode(0))
+        .async_modify(|_, w| w.accel_mode(0).gyro_mode(0))
+        .await
         .unwrap();
 
     // Switch to bank 2 from bank 0
     icm.ll()
         .bank::<0>()
         .reg_bank_sel()
-        .write(|r| r.bank_sel(2))
+        .async_write(|r| r.bank_sel(2))
+        .await
         .unwrap();
     icm.ll().set_bank(2);
 
@@ -98,63 +95,73 @@ pub async fn imu_task(
     icm.ll()
         .bank::<2>()
         .accel_config_static2()
-        .modify(|_, w| w.accel_aaf_delt(5).accel_aaf_dis(0)) // 213 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.accel_aaf_delt(5).accel_aaf_dis(0)) // 213 Hz 3dB Bandwidth
+        .await
         .unwrap();
     icm.ll()
         .bank::<2>()
         .accel_config_static3()
-        .modify(|_, w| w.accel_aaf_deltsqr_7_0(25)) // 213 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.accel_aaf_deltsqr_7_0(25)) // 213 Hz 3dB Bandwidth
+        .await
         .unwrap();
     icm.ll()
         .bank::<2>()
         .accel_config_static4()
-        .modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(10)) // 213 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(10)) // 213 Hz 3dB Bandwidth
+        .await
         .unwrap();
 
     // Switch to bank 1
     icm.ll()
         .bank::<2>()
         .reg_bank_sel()
-        .write(|r| r.bank_sel(1))
+        .async_write(|r| r.bank_sel(1))
+        .await
         .unwrap();
     icm.ll().set_bank(1);
 
     icm.ll()
         .bank::<1>()
         .gyro_config_static2()
-        .modify(|_, w| w.gyro_aaf_dis(0)) // 258 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.gyro_aaf_dis(0)) // 258 Hz 3dB Bandwidth
+        .await
         .unwrap();
 
     icm.ll()
         .bank::<1>()
         .gyro_config_static3()
-        .modify(|_, w| w.gyro_aaf_delt(6)) // 258 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.gyro_aaf_delt(6)) // 258 Hz 3dB Bandwidth
+        .await
         .unwrap();
 
     icm.ll()
         .bank::<1>()
         .gyro_config_static4()
-        .modify(|_, w| w.gyro_aaf_deltsqr_7_0(36)) // 258 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.gyro_aaf_deltsqr_7_0(36)) // 258 Hz 3dB Bandwidth
+        .await
         .unwrap();
 
     icm.ll()
         .bank::<1>()
         .gyro_config_static5()
-        .modify(|_, w| w.gyro_aaf_deltsqr_11_8(0).gyro_aaf_bitshift(10)) // 258 Hz 3dB Bandwidth
+        .async_modify(|_, w| w.gyro_aaf_deltsqr_11_8(0).gyro_aaf_bitshift(10)) // 258 Hz 3dB Bandwidth
+        .await
         .unwrap();
 
     // Set Pin 9 of the ICM to CLKIN
     icm.ll()
         .bank::<1>()
         .intf_config5()
-        .modify(|_, w| w.pin9_function(0b10))
+        .async_modify(|_, w| w.pin9_function(0b10))
+        .await
         .unwrap();
 
     // Switch to bank 0
     icm.ll()
         .bank::<1>()
         .reg_bank_sel()
-        .write(|r| r.bank_sel(0))
+        .async_write(|r| r.bank_sel(0))
+        .await
         .unwrap();
     icm.ll().set_bank(0);
 
@@ -162,28 +169,32 @@ pub async fn imu_task(
     icm.ll()
         .bank::<0>()
         .intf_config1()
-        .modify(|_, w| w.rtc_mode(1))
+        .async_modify(|_, w| w.rtc_mode(1))
+        .await
         .unwrap();
 
     // Set FIFO watermark to 1 packet
     icm.ll()
         .bank::<0>()
         .fifo_config2()
-        .modify(|_, w| w.fifo_wm_7_0(1))
+        .async_modify(|_, w| w.fifo_wm_7_0(1))
+        .await
         .unwrap();
 
     // Enable interrupt
     icm.ll()
         .bank::<0>()
         .int_source0()
-        .modify(|_, w| w.fifo_ths_int1_en(1))
+        .async_modify(|_, w| w.fifo_ths_int1_en(1))
+        .await
         .unwrap();
 
     // Turn on gyro and accelerometer
     icm.ll()
         .bank::<0>()
         .pwr_mgmt0()
-        .modify(|_, w| w.accel_mode(0b11).gyro_mode(0b11))
+        .async_modify(|_, w| w.accel_mode(0b11).gyro_mode(0b11))
+        .await
         .unwrap();
 
     // Wait 300us for the gyro and accelerometer to be ready
@@ -201,7 +212,7 @@ pub async fn imu_task(
 
         // 16 * 4 = 64 bytes, 4 bytes header + 3 * 20 bytes data
         let mut fifo_buffer = [0u32; 16];
-        let buffered_num = icm.read_fifo(&mut fifo_buffer).unwrap();
+        let buffered_num = icm.read_fifo(&mut fifo_buffer).await.unwrap();
 
         defmt::trace!("In-FIFO: {} packets", buffered_num);
 

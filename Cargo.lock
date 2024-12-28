@@ -3,6 +3,22 @@
 version = 3
 
 [[package]]
+name = "ak09940a"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cf28b87c82a6aa8f19b5ddf51f481a735658369a422f6083d24ab3e3a015ce4"
+dependencies = [
+ "arbitrary-int",
+ "arrayref",
+ "bitbybit",
+ "duplicate",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "heapless 0.8.0",
+ "maybe-async",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -22,6 +38,12 @@ name = "array-init"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d62b7694a562cdf5a74227903507c56ab2cc8bdd1f781ed5cb4cf9c9f810bfc"
+
+[[package]]
+name = "arrayref"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
 
 [[package]]
 name = "atomic-polyfill"
@@ -423,6 +445,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb6969eaabd2421f8a2775cfd2471a2b634372b4a25d41e3bd647b79912850a0"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "duplicate"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97af9b5f014e228b33e77d75ee0e6e87960124f0f4b16337b586a6bec91867b1"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "proc-macro2-diagnostics",
 ]
 
 [[package]]
@@ -1326,6 +1359,7 @@ dependencies = [
  "bytemuck",
  "defmt",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "paste",
 ]
 
@@ -1440,6 +1474,7 @@ dependencies = [
 name = "magic-loc-ng"
 version = "0.2.0"
 dependencies = [
+ "ak09940a",
  "anyhow",
  "arbitrary-int",
  "bbqueue",
@@ -1478,6 +1513,7 @@ dependencies = [
  "esp-storage",
  "esp-wifi",
  "esp-wifi-sys",
+ "esp32s3",
  "heapless 0.8.0",
  "icm426xx",
  "ieee80211",
@@ -1810,6 +1846,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proc-macro2-diagnostics"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af066a9c399a26e020ada66a034357a868728e72cd426f3adcd35f80d88d88c8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.90",
+ "version_check",
+ "yansi",
 ]
 
 [[package]]
@@ -2374,3 +2423,9 @@ dependencies = [
  "quote",
  "syn 2.0.90",
 ]
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"

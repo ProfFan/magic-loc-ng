@@ -113,16 +113,13 @@ pub async fn uwb_client_task(
         UwbClientReport,
         1,
     >,
+    address: u8,
 ) {
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
     let mut uwb_device = crate::DW3000.get().await.lock().await;
 
     let (spi, rst, irq) = uwb_device.split_borrow();
-
-    let stack = crate::network::WIFI_STACK.get().await;
-    let address = stack.config_v4().unwrap().address;
-    let address = address.address().octets()[3]; // Just use the last octet as the node ID
 
     // Reset
     rst.set_low();
@@ -446,11 +443,16 @@ pub async fn uwb_client_start(
     let stop_signal_streamer = STOP_SIGNAL_STREAMER.get_or_init(Signal::new);
     let report_channel = CLIENT_REPORT_CHANNEL.get_or_init(embassy_sync::channel::Channel::new);
 
+    let stack = crate::network::WIFI_STACK.get().await;
+    let address = stack.config_v4().unwrap().address;
+    let address = address.address().octets()[3]; // Just use the last octet as the node ID
+
     spawner_core1
         .spawn(uwb_client_task(
             stop_signal,
             &STOPPED_SIGNAL,
             report_channel,
+            address,
         ))
         .unwrap();
 

@@ -10,12 +10,13 @@ resolver = "2"
 esp-fast-serial = { version = "0.5.0", path = "../esp-fast-serial", features = ["esp32s3"] }
 esp-wifi-sys = { version = "0.7.*" }
 icm426xx = { version = "0.3.*", default-features = false, features = [
-    # "async",
+    "async",
 ]}
 dw3000-ng = { package = "dw3000-ng", version = "1.0", default-features = false, features = [
     "defmt",
     # "async",
 ] }
+ak09940a = "0.1.2"
 # magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
 embedded-graphics = { version = "0.8.0" }
@@ -29,7 +30,7 @@ esp-hal = { version = "0.22.0", default-features = false, features = [
     "defmt",
     "quad-psram",
 ] }
-# esp32s3 = "0.26.0"
+esp32s3 = "*"
 esp-hal-embassy = { version = "0.5.*" } # features = ["integrated-timers"] }
 
 static_cell = { version = "*", features = ["nightly"] }

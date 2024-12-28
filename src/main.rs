@@ -15,6 +15,7 @@ mod display;
 mod hist_buffer;
 mod indicator;
 mod inertial;
+mod multipin_spi;
 mod network;
 mod ranging;
 mod utils;
@@ -26,7 +27,7 @@ use embassy_sync::{
     mutex::Mutex,
     once_lock::OnceLock,
 };
-use esp_hal::assist_debug::DebugAssist;
+use esp_hal::{assist_debug::DebugAssist, spi::master::SpiDma};
 use esp_hal_embassy::{Executor, InterruptExecutor};
 use static_cell::StaticCell;
 
@@ -36,6 +37,7 @@ use defmt as _;
 use embassy_embedded_hal::shared_bus::{asynch::i2c::I2cDevice, blocking::spi::SpiDevice};
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_time::Timer;
+use esp32s3;
 use esp_backtrace as _;
 use esp_hal::{
     cpu_control::{CpuControl, Stack},
@@ -188,13 +190,21 @@ async fn main(spawner: Spawner) {
         .spawn(esp_fast_serial::serial_comm_task(peripherals.USB_DEVICE))
         .unwrap();
 
-    let sclk = peripherals.GPIO33;
-    let mosi = peripherals.GPIO40;
-    let miso = peripherals.GPIO47;
+    let imu_sclk = peripherals.GPIO33;
+    let imu_mosi = peripherals.GPIO40;
+    let imu_miso = peripherals.GPIO47;
     let imu_cs = peripherals.GPIO34;
     let imu_int = peripherals.GPIO48;
     let imu_clkin = peripherals.GPIO41;
     let baro_cs = peripherals.GPIO11;
+
+    let ext_spi_int = peripherals.GPIO21;
+    let ext_spi_cs = peripherals.GPIO10;
+    let ext_spi_sclk = peripherals.GPIO12;
+    let ext_spi_mosi = peripherals.GPIO13;
+    let ext_spi_miso = peripherals.GPIO14;
+
+    let mag_cs = Output::new(ext_spi_cs, Level::High);
 
     // Prevent the barometer from operating in I2C mode
     let mut baro_cs = Output::new(baro_cs, Level::High);
@@ -285,17 +295,36 @@ async fn main(spawner: Spawner) {
     let dma = Dma::new(peripherals.DMA);
     // let _dma_channel = peripherals.DMA_CH0;
 
-    let spi = Spi::new_typed_with_config(
+    let spi2: Spi<'static, Blocking, _> = Spi::new_typed_with_config(
         peripherals.SPI2,
         esp_hal::spi::master::Config {
-            frequency: 24.MHz(),
+            frequency: 3.MHz(),
             mode: SpiMode::Mode0,
             ..Default::default()
         },
     )
-    .with_sck(sclk)
-    .with_miso(miso)
-    .with_mosi(mosi);
+    .with_sck(imu_sclk)
+    // .with_miso(imu_miso)
+    .with_mosi(imu_mosi);
+
+    let dma_channel = dma.channel0;
+
+    let spi2 = spi2.with_dma(dma_channel.configure(false, DmaPriority::Priority0));
+
+    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(256);
+    let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+
+    let spi2 = spi2.with_buffers(dma_rx_buf, dma_tx_buf).into_async();
+    static SPI2: StaticCell<
+        Mutex<CriticalSectionRawMutex, SpiDmaBus<'static, Async, esp_hal::peripherals::SPI2>>,
+    > = StaticCell::new();
+    let spi_mutex = SPI2.init(Mutex::new(spi2.into()));
+
+    // Duplicate SPI2 signals to external SPI for the magnetometer
+    esp_hal::gpio::OutputSignal::FSPICLK.connect_to(ext_spi_sclk);
+    esp_hal::gpio::OutputSignal::FSPID.connect_to(ext_spi_mosi);
+    // NOTE: MISO cannot be duplicated as it is an input
 
     // LEDC for IMU 32kHz clock
     let mut ledc = Ledc::new(peripherals.LEDC);
@@ -323,6 +352,8 @@ async fn main(spawner: Spawner) {
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
 
+    // --- MAGNETOMETER ---
+
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
     let config_store_ = config_store.clone();
     static CPU1_SPAWNER: OnceLock<SendSpawner> = OnceLock::new();
@@ -332,13 +363,15 @@ async fn main(spawner: Spawner) {
             EXECUTOR_CORE1.init(InterruptExecutor::new(sw_ints.software_interrupt2));
         let spawner_l2 = executor_core1.start(interrupt::Priority::Priority2);
 
+        // let spi_imu = embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(&spi_mutex, imu_cs);
+
         spawner_l2
             .spawn(inertial::imu_task(
                 config_store_.clone(),
                 Output::new(imu_cs, Level::High),
                 Input::new(imu_int, Pull::Up),
                 // dma_channel.configure(false, DmaPriority::Priority0).,
-                spi,
+                spi_mutex,
                 imu_pubsub,
             ))
             .unwrap();
