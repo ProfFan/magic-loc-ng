@@ -70,6 +70,23 @@ static IMU_PUBSUB: OnceLock<
     >,
 > = OnceLock::new();
 
+static MAG_PUBSUB: OnceLock<
+    embassy_sync::pubsub::PubSubChannel<
+        CriticalSectionRawMutex,
+        (
+            ak09940a::ll::reg::ST1,
+            ak09940a::ll::reg::HX,
+            ak09940a::ll::reg::HY,
+            ak09940a::ll::reg::HZ,
+            ak09940a::ll::reg::TMPS,
+            ak09940a::ll::reg::ST2,
+        ),
+        3,
+        2,
+        1,
+    >,
+> = OnceLock::new();
+
 struct Dw3000Device {
     spi: SpiDevice<'static, NoopRawMutex, SpiDmaBus<'static, Blocking>, Output<'static>>,
     rst: Output<'static>,
@@ -146,7 +163,7 @@ async fn main(spawner: Spawner) {
     let timer3: AnyTimer = systimer.alarm1.into_target().into();
     esp_hal_embassy::init([timer0, timer1, timer2, timer3]);
 
-    esp_alloc::heap_allocator!(128 * 1024);
+    esp_alloc::heap_allocator!(96 * 1024);
 
     let config_store = alloc::sync::Arc::new(embassy_sync::mutex::Mutex::<
         CriticalSectionRawMutex,
@@ -201,10 +218,8 @@ async fn main(spawner: Spawner) {
     let ext_spi_int = peripherals.GPIO21;
     let ext_spi_cs = peripherals.GPIO10;
     let ext_spi_sclk = peripherals.GPIO12;
-    let ext_spi_mosi = peripherals.GPIO13;
-    let ext_spi_miso = peripherals.GPIO14;
-
-    let mag_cs = Output::new(ext_spi_cs, Level::High);
+    let ext_spi_mosi = peripherals.GPIO14;
+    let ext_spi_miso = peripherals.GPIO13;
 
     // Prevent the barometer from operating in I2C mode
     let mut baro_cs = Output::new(baro_cs, Level::High);
@@ -322,35 +337,20 @@ async fn main(spawner: Spawner) {
     let spi_mutex = SPI2.init(Mutex::new(spi2.into()));
 
     // Duplicate SPI2 signals to external SPI for the magnetometer
+    use esp_hal::peripheral::Peripheral;
+    let _ = Output::new(unsafe { ext_spi_mosi.clone_unchecked() }, Level::High);
+    let _ = Output::new(unsafe { ext_spi_sclk.clone_unchecked() }, Level::High);
+
     esp_hal::gpio::OutputSignal::FSPICLK.connect_to(ext_spi_sclk);
     esp_hal::gpio::OutputSignal::FSPID.connect_to(ext_spi_mosi);
+
     // NOTE: MISO cannot be duplicated as it is an input
-
-    // LEDC for IMU 32kHz clock
-    let mut ledc = Ledc::new(peripherals.LEDC);
-    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
-
-    let mut lstimer0 = ledc.timer::<LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
-    lstimer0
-        .configure(esp_hal::ledc::timer::config::Config {
-            duty: esp_hal::ledc::timer::config::Duty::Duty9Bit,
-            clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
-            frequency: 32.kHz(),
-        })
-        .unwrap();
-
-    let mut channel0 = ledc.channel(esp_hal::ledc::channel::Number::Channel0, imu_clkin);
-    channel0
-        .configure(esp_hal::ledc::channel::config::Config {
-            timer: &lstimer0,
-            duty_pct: 50,
-            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
-        })
-        .unwrap();
 
     let imu_pubsub_ = embassy_sync::pubsub::PubSubChannel::new();
 
     let imu_pubsub = IMU_PUBSUB.get_or_init(|| imu_pubsub_);
+
+    let mag_pubsub = MAG_PUBSUB.get_or_init(|| embassy_sync::pubsub::PubSubChannel::new());
 
     // --- MAGNETOMETER ---
 
@@ -368,11 +368,17 @@ async fn main(spawner: Spawner) {
         spawner_l2
             .spawn(inertial::imu_task(
                 config_store_.clone(),
+                imu_clkin,
                 Output::new(imu_cs, Level::High),
+                Output::new(ext_spi_cs, Level::High),
+                imu_miso,
+                ext_spi_miso,
                 Input::new(imu_int, Pull::Up),
+                ext_spi_int,
                 // dma_channel.configure(false, DmaPriority::Priority0).,
                 spi_mutex,
                 imu_pubsub,
+                mag_pubsub,
             ))
             .unwrap();
 

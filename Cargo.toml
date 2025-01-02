@@ -16,7 +16,7 @@ dw3000-ng = { package = "dw3000-ng", version = "1.0", default-features = false, 
     "defmt",
     # "async",
 ] }
-ak09940a = "0.1.2"
+ak09940a = { version = "0.2" }
 # magic-loc-protocol = { package = "magic-loc-protocol", git = "https://github.com/ProfFan/magic-loc-protocol.git", branch = "main" }
 
 embedded-graphics = { version = "0.8.0" }

@@ -1,13 +1,16 @@
 use crate::configuration::ConfigurationStore;
 use crate::multipin_spi::MultipinSpiDevice;
 use alloc::sync::Arc;
+use arbitrary_int::u24;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Timer};
 use embedded_hal::spi::Operation;
 use embedded_hal_async::spi::SpiDevice;
 use esp_hal::gpio::{Input, Output};
+use esp_hal::ledc::{LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::macros::ram;
+use esp_hal::prelude::*;
 use esp_hal::spi::master::SpiDmaBus;
 use esp_hal::Async;
 
@@ -15,8 +18,13 @@ use esp_hal::Async;
 #[ram]
 pub async fn imu_task(
     config_store: Arc<Mutex<CriticalSectionRawMutex, ConfigurationStore>>,
-    cs_output: Output<'static>,
+    imu_clkin: esp_hal::gpio::GpioPin<41>,
+    imu_cs: Output<'static>,
+    ext_spi_cs: Output<'static>,
+    imu_miso: esp_hal::gpio::GpioPin<47>,
+    ext_spi_miso: esp_hal::gpio::GpioPin<13>,
     mut int_input: Input<'static>,
+    ext_spi_int: esp_hal::gpio::GpioPin<21>,
     // _dma_channel: esp_hal::dma::AnyGdmaChannel,
     spi_mutex: &'static Mutex<
         CriticalSectionRawMutex,
@@ -25,6 +33,20 @@ pub async fn imu_task(
     imu_pubsub: &'static embassy_sync::pubsub::PubSubChannel<
         CriticalSectionRawMutex,
         icm426xx::fifo::FifoPacket4,
+        3,
+        2,
+        1,
+    >,
+    mag_pubsub: &'static embassy_sync::pubsub::PubSubChannel<
+        CriticalSectionRawMutex,
+        (
+            ak09940a::ll::reg::ST1,
+            ak09940a::ll::reg::HX,
+            ak09940a::ll::reg::HY,
+            ak09940a::ll::reg::HZ,
+            ak09940a::ll::reg::TMPS,
+            ak09940a::ll::reg::ST2,
+        ),
         3,
         2,
         1,
@@ -40,13 +62,51 @@ pub async fn imu_task(
         .unwrap();
 
     let imu_pub = imu_pubsub.publisher().unwrap();
+    let mag_pub = mag_pubsub.publisher().unwrap();
 
-    let peripherals = unsafe { esp_hal::peripherals::Peripherals::steal() };
+    // LEDC for IMU 32kHz clock
+    let mut ledc = Ledc::new(unsafe { esp_hal::peripherals::LEDC::steal() });
+    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
+
+    let mut lstimer0 = ledc.timer::<LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
+    lstimer0
+        .configure(esp_hal::ledc::timer::config::Config {
+            duty: esp_hal::ledc::timer::config::Duty::Duty9Bit,
+            clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
+            frequency: 32.kHz(),
+        })
+        .unwrap();
+
+    let mut channel0 = ledc.channel(esp_hal::ledc::channel::Number::Channel0, imu_clkin);
+    channel0
+        .configure(esp_hal::ledc::channel::config::Config {
+            timer: &lstimer0,
+            duty_pct: 50,
+            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
+        })
+        .unwrap();
+
+    let mut lstimer1 = ledc.timer::<LowSpeed>(esp_hal::ledc::timer::Number::Timer1);
+    lstimer1
+        .configure(esp_hal::ledc::timer::config::Config {
+            duty: esp_hal::ledc::timer::config::Duty::Duty14Bit,
+            clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
+            frequency: 1.kHz(),
+        })
+        .unwrap();
+
     let mut spidev = MultipinSpiDevice::new(
         spi_mutex,
-        cs_output,
+        imu_cs,
         esp_hal::gpio::InputSignal::FSPIQ,
-        peripherals.GPIO47,
+        imu_miso,
+    );
+
+    let spidev_mag = MultipinSpiDevice::new(
+        spi_mutex,
+        ext_spi_cs,
+        esp_hal::gpio::InputSignal::FSPIQ,
+        ext_spi_miso,
     );
 
     spidev
@@ -55,6 +115,35 @@ pub async fn imu_task(
         .unwrap(); // Assert and deassert CS
 
     let icm = icm426xx::ICM42688::new(spidev);
+
+    let mag = ak09940a::non_blocking::AK09940A::new(spidev_mag)
+        .external_trigger()
+        .await;
+
+    let mut mag = match mag {
+        Ok(mag) => Some(mag),
+        Err(e) => {
+            match e {
+                ak09940a::non_blocking::Error::Spi(e) => defmt::error!("SPI error: {:?}", e),
+                ak09940a::non_blocking::Error::InvalidWhoAmI(w) => {
+                    defmt::error!("Invalid WHO_AM_I: {:?}", w)
+                }
+                ak09940a::non_blocking::Error::SensorBusy => defmt::error!("Sensor busy"),
+                ak09940a::non_blocking::Error::InvalidMode => defmt::error!("Invalid mode"),
+            }
+            None
+        }
+    };
+
+    // Enable MAG Trigger
+    let mut channel1 = ledc.channel(esp_hal::ledc::channel::Number::Channel1, ext_spi_int);
+    channel1
+        .configure(esp_hal::ledc::channel::config::Config {
+            timer: &lstimer1,
+            duty_pct: 1,
+            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
+        })
+        .unwrap();
 
     Timer::after_secs(1).await;
 
@@ -246,6 +335,31 @@ pub async fn imu_task(
             );
 
             imu_pub.publish_immediate(*packet);
+        }
+
+        if let Some(mag) = mag.as_mut() {
+            if let Ok((st1, hx, hy, hz, tmps, st2)) = mag.read_data().await {
+                mag_pub.publish_immediate((st1, hx, hy, hz, tmps, st2));
+
+                let sign_extend_u24 = |value: u32| -> i32 {
+                    let sign_bit = (value & 0x800000) != 0;
+                    let extended = value;
+                    if sign_bit {
+                        (extended | 0xFF000000) as i32
+                    } else {
+                        extended as i32
+                    }
+                };
+
+                defmt::info!(
+                    "Mag: [{},{}] {} {} {}",
+                    st1.frame_number(),
+                    st1.data_ready(),
+                    sign_extend_u24(hx.raw_value().value()),
+                    sign_extend_u24(hy.raw_value().value()),
+                    sign_extend_u24(hz.raw_value().value())
+                );
+            }
         }
     }
 }
