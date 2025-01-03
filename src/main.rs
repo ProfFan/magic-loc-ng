@@ -267,15 +267,6 @@ async fn main(spawner: Spawner) {
     .with_sda(bms_sda)
     .with_scl(bms_scl)
     .into_async();
-    // let mut reg07 = [0u8; 1];
-
-    // // Register 0x07, 1 byte
-    // bms_i2c.write_read(0x6B, &[0x07], &mut reg07).await.ok();
-    // bms_i2c
-    //     .write(0x6B, &[0x07, reg07[0] | 0b00100000u8])
-    //     // .write(0x6B, &[0x07, reg07[0] & 0b11011111u8])
-    //     .await
-    //     .ok();
 
     BMS_I2C
         .init(Mutex::<CriticalSectionRawMutex, _>::new(bms_i2c))
@@ -432,17 +423,6 @@ async fn main(spawner: Spawner) {
             let dw_irq = Input::new(dw_irq, Pull::Up);
             let dw_cs = Output::new(dw_cs, Level::High);
 
-            // static SPI_DEV: StaticCell<
-            //     embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice<
-            //         'static,
-            //         NoopRawMutex,
-            //         SpiDmaBus<'static, Async>,
-            //         Output<'static>,
-            //     >,
-            // > = StaticCell::new();
-            // let spi_dev = SPI_DEV
-            //     .init(embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice::new(bus, dw_cs));
-
             DW3000
                 .init(Mutex::<_, _>::new(Dw3000Device {
                     spi: embassy_embedded_hal::shared_bus::blocking::spi::SpiDevice::new(
@@ -452,17 +432,6 @@ async fn main(spawner: Spawner) {
                     irq: dw_irq,
                 }))
                 .unwrap_or(());
-
-            // static STATE: StaticCell<ranging::uwb_driver::State<127, 1, 1>> = StaticCell::new();
-            // let state = STATE.init(ranging::uwb_driver::State::<127, 1, 1>::new());
-
-            // let (uwb_runner, uwb_device) = ranging::uwb_driver::new(state, spi_dev, dw_rst, dw_irq);
-
-            // spawner.spawn(ranging::uwb_driver_task(uwb_runner)).unwrap();
-
-            // UWB_DEVICE
-            //     .init(Mutex::<CriticalSectionRawMutex, _>::new(uwb_device))
-            //     .unwrap();
         });
     };
 

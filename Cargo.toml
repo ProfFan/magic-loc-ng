@@ -142,7 +142,7 @@ opt-level = 1
 lto = "fat"
 opt-level = 3
 debug = true
-# codegen-units = 1
+codegen-units = 1
 
 # [profile.release.package.rhai]
 # opt-level = "z"

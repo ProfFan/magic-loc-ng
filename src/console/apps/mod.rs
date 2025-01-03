@@ -31,9 +31,6 @@ pub use uwb_client::uwb_client;
 pub mod battery;
 pub use battery::battery_config;
 
-pub mod mag_test;
-pub use mag_test::magnetometer_test;
-
 pub async fn free<'a>(_: &[Token<'a>]) -> Result<(), ()> {
     let free_mem = esp_alloc::HEAP.free();
     let _ = esp_fast_serial::write_to_usb_serial_buffer(

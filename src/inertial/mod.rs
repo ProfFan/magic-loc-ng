@@ -1,8 +1,7 @@
 use crate::configuration::ConfigurationStore;
 use crate::multipin_spi::MultipinSpiDevice;
 use alloc::sync::Arc;
-use arbitrary_int::u24;
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Timer};
 use embedded_hal::spi::Operation;
@@ -135,15 +134,8 @@ pub async fn imu_task(
         }
     };
 
-    // Enable MAG Trigger
+    // MAG Trigger Output
     let mut channel1 = ledc.channel(esp_hal::ledc::channel::Number::Channel1, ext_spi_int);
-    channel1
-        .configure(esp_hal::ledc::channel::config::Config {
-            timer: &lstimer1,
-            duty_pct: 1,
-            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
-        })
-        .unwrap();
 
     Timer::after_secs(1).await;
 
@@ -286,6 +278,16 @@ pub async fn imu_task(
         .await
         .unwrap();
 
+    // Enable MAG Trigger
+    // TODO: Will this introduce a 1ms delay?
+    channel1
+        .configure(esp_hal::ledc::channel::config::Config {
+            timer: &lstimer1,
+            duty_pct: 1,
+            pin_config: esp_hal::ledc::channel::config::PinConfig::PushPull,
+        })
+        .unwrap();
+
     // Wait 300us for the gyro and accelerometer to be ready
     Timer::after_micros(300).await;
 
@@ -341,23 +343,13 @@ pub async fn imu_task(
             if let Ok((st1, hx, hy, hz, tmps, st2)) = mag.read_data().await {
                 mag_pub.publish_immediate((st1, hx, hy, hz, tmps, st2));
 
-                let sign_extend_u24 = |value: u32| -> i32 {
-                    let sign_bit = (value & 0x800000) != 0;
-                    let extended = value;
-                    if sign_bit {
-                        (extended | 0xFF000000) as i32
-                    } else {
-                        extended as i32
-                    }
-                };
-
-                defmt::info!(
+                defmt::trace!(
                     "Mag: [{},{}] {} {} {}",
                     st1.frame_number(),
                     st1.data_ready(),
-                    sign_extend_u24(hx.raw_value().value()),
-                    sign_extend_u24(hy.raw_value().value()),
-                    sign_extend_u24(hz.raw_value().value())
+                    hx.magnitude(),
+                    hy.magnitude(),
+                    hz.magnitude()
                 );
             }
         }
