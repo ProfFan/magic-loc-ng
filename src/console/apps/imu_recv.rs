@@ -20,9 +20,9 @@ pub async fn imu_recv_app(
     let stack = crate::network::WIFI_STACK.get().await;
 
     let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut rx_payload_buffer = [0; 1024];
+    let mut rx_payload_buffer = [0; 1500];
     let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut tx_payload_buffer = [0; 1024];
+    let mut tx_payload_buffer = [0; 1500];
 
     let mut socket = embassy_net::udp::UdpSocket::new(
         *stack,
@@ -42,7 +42,7 @@ pub async fn imu_recv_app(
     }
 
     loop {
-        let mut packet_buffer = [0; 1024];
+        let mut packet_buffer = [0; 1500];
         let (len_recv, _metadata) =
             match select(socket.recv_from(&mut packet_buffer), stop_token.wait()).await {
                 Either::First(recv) => recv.unwrap(),
@@ -72,13 +72,13 @@ pub async fn imu_recv_app(
                     "IMU packet from {:?}: T_HOST: {:09}, ACC: ({:06}, {:06}, {:06}), GYR: ({:06}, {:06}, {:06}), TEMP: {:04}\n",
                     imu_packet.origin,
                     imu_packet.timestamp,
-                    last_sample.accel_data_x(),
-                    last_sample.accel_data_y(),
-                    last_sample.accel_data_z(),
-                    last_sample.gyro_data_x(),
-                    last_sample.gyro_data_y(),
-                    last_sample.gyro_data_z(),
-                    last_sample.temperature_raw()
+                    last_sample.imu_packet.accel_data_x(),
+                    last_sample.imu_packet.accel_data_y(),
+                    last_sample.imu_packet.accel_data_z(),
+                    last_sample.imu_packet.gyro_data_x(),
+                    last_sample.imu_packet.gyro_data_y(),
+                    last_sample.imu_packet.gyro_data_z(),
+                    last_sample.imu_packet.temperature_raw()
                 ).as_bytes());
             }
         }

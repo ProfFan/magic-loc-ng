@@ -262,8 +262,8 @@ pub async fn uwb_client_task(
 
         let poll_packet: &UwbMasterPoll = match bytemuck::try_from_bytes(payload) {
             Ok(poll_packet) => poll_packet,
-            Err(_e) => {
-                defmt::debug!("Received invalid payload: {:?}", payload);
+            Err(e) => {
+                defmt::debug!("Cast failed: {:?}, {:?}", defmt::Debug2Format(&e), payload);
                 continue;
             }
         };

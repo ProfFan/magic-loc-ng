@@ -1,6 +1,7 @@
 use core::sync::atomic::AtomicBool;
 
 use crate::hist_buffer::HistoryBuffer;
+use bytemuck::{AnyBitPattern, Pod, Zeroable};
 use embassy_executor::Spawner;
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex, once_lock::OnceLock, pubsub::WaitResult, signal::Signal,
@@ -9,7 +10,23 @@ use esp_hal::macros::ram;
 
 use super::Token;
 
-const IMU_PACKET_HISTORY_SIZE: usize = 40;
+const IMU_PACKET_HISTORY_SIZE: usize = 30;
+
+#[derive(Debug, Copy, Clone, Pod, Zeroable, defmt::Format)]
+#[repr(C)]
+pub struct MagPacket {
+    pub mag_data_x: i32,
+    pub mag_data_y: i32,
+    pub mag_data_z: i32,
+    pub mag_temp_milli_celsius: i32,
+}
+
+#[derive(Debug, Copy, Clone, AnyBitPattern, defmt::Format)]
+#[repr(C)]
+pub struct CombinedIMUPacket {
+    pub imu_packet: icm426xx::fifo::FifoPacket4,
+    pub mag_packet: MagPacket,
+}
 
 #[derive(Debug)]
 #[repr(C)]
@@ -23,7 +40,7 @@ pub struct IMUPacket {
     /// Sample number
     pub sample_num: u64,
     /// FIFO packets
-    pub packets: HistoryBuffer<icm426xx::fifo::FifoPacket4, IMU_PACKET_HISTORY_SIZE>,
+    pub packets: HistoryBuffer<CombinedIMUPacket, IMU_PACKET_HISTORY_SIZE>,
 }
 
 /// `defmt` formatter for `IMUPacket`
@@ -48,6 +65,7 @@ pub async fn imu_stream_task(
     stopped_signal.store(false, core::sync::atomic::Ordering::Release);
 
     let mut imu_sub = crate::IMU_PUBSUB.get().await.subscriber().unwrap();
+    let mut mag_sub = crate::MAG_PUBSUB.get().await.subscriber().unwrap();
 
     let mut wire_packet = IMUPacket {
         header: *b"MIMU",
@@ -71,9 +89,9 @@ pub async fn imu_stream_task(
     }
 
     let mut rx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut rx_payload_buffer = [0; 1024];
+    let mut rx_payload_buffer = [0; 1500];
     let mut tx_metadata_buffer = [embassy_net::udp::PacketMetadata::EMPTY; 1];
-    let mut tx_payload_buffer = [0; 1024];
+    let mut tx_payload_buffer = [0; 1500];
 
     // UDP socket
     let mut socket = embassy_net::udp::UdpSocket::new(
@@ -103,13 +121,27 @@ pub async fn imu_stream_task(
             }
         };
 
+        let mag_packet = mag_sub
+            .try_next_message_pure()
+            .map(|(_st1, hx, hy, hz, tmps, _st2)| MagPacket {
+                mag_data_x: hx.magnitude(),
+                mag_data_y: hy.magnitude(),
+                mag_data_z: hz.magnitude(),
+                mag_temp_milli_celsius: tmps.milli_celsius(),
+            })
+            .unwrap_or_else(|| MagPacket::zeroed());
+
         wire_packet.timestamp = embassy_time::Instant::now().as_micros();
-        wire_packet.packets.write(imu_packet);
+        wire_packet.packets.write(CombinedIMUPacket {
+            imu_packet,
+            mag_packet,
+        });
+        // wire_packet.packets.write(imu_packet);
         records_written += 1;
         sample_idx += 1;
         wire_packet.sample_num = sample_idx;
 
-        if records_written >= (IMU_PACKET_HISTORY_SIZE / 4) as u64 {
+        if records_written >= (IMU_PACKET_HISTORY_SIZE / 3) as u64 {
             let wire_packet_bytes = unsafe {
                 core::mem::transmute::<&IMUPacket, &[u8; core::mem::size_of::<IMUPacket>()]>(
                     &wire_packet,
